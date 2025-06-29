@@ -94,3 +94,11 @@ class ProductionConfig(Config):
 
 # Configuration par défaut
 config = DevelopmentConfig if Config.is_development() else ProductionConfig 
+
+# Configuration SMTP pour l'envoi d'emails (Gmail)
+SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
+SMTP_USER = os.getenv('SMTP_USER', 'votre.email@gmail.com')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', 'votre_mot_de_passe_app')
+RESET_TOKEN_SECRET = os.getenv('RESET_TOKEN_SECRET', 'reset-secret-key')
+RESET_TOKEN_EXPIRATION_MINUTES = int(os.getenv('RESET_TOKEN_EXPIRATION_MINUTES', 30)) 

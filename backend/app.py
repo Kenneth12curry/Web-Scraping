@@ -25,6 +25,11 @@ import re
 import logging.handlers
 import sys
 from typing import Optional, Tuple, Any, Dict, List
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import secrets
+import hashlib
 
 # Prometheus monitoring
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
@@ -135,6 +140,16 @@ REDIS_CONFIG = {
     'decode_responses': True
 }
 
+# Configuration SMTP pour l'envoi d'emails
+SMTP_CONFIG = {
+    'host': os.getenv('SMTP_HOST', 'smtp.gmail.com'),
+    'port': int(os.getenv('SMTP_PORT', 587)),
+    'username': os.getenv('SMTP_USERNAME', ''),
+    'password': os.getenv('SMTP_PASSWORD', ''),
+    'use_tls': os.getenv('SMTP_USE_TLS', 'True').lower() == 'true',
+    'use_ssl': os.getenv('SMTP_USE_SSL', 'False').lower() == 'true'
+}
+
 # Variables globales pour les connexions
 mysql_connection = None
 redis_client = None
@@ -188,6 +203,11 @@ def init_db():
                 password_hash VARCHAR(255) NOT NULL,
                 email VARCHAR(255) UNIQUE,
                 role VARCHAR(50) DEFAULT 'user',
+                subscription_plan VARCHAR(50) DEFAULT 'free',
+                subscription_start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                subscription_end_date TIMESTAMP NULL,
+                monthly_requests_used INT DEFAULT 0,
+                monthly_requests_limit INT DEFAULT 30,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -222,6 +242,22 @@ def init_db():
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ''')
         
+        # Table pour les tokens de réinitialisation de mot de passe
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                token VARCHAR(255) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_token (token),
+                INDEX idx_user_id (user_id),
+                INDEX idx_expires_at (expires_at),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        ''')
+        
         # Insérer l'utilisateur admin s'il n'existe pas
         cursor.execute('SELECT id FROM users WHERE username = %s', (ADMIN_USERNAME,))
         if not cursor.fetchone():
@@ -246,17 +282,57 @@ def get_user_by_username(username):
             return None
             
         cursor = conn.cursor()
-        cursor.execute('SELECT id, username, password_hash, email, role FROM users WHERE username = %s', (username,))
-        row = cursor.fetchone()
         
-        if row:
-            return {
-                'id': int(row[0]) if row[0] is not None else None,  # type: ignore
-                'username': str(row[1]) if row[1] is not None else '',  # type: ignore
-                'password_hash': str(row[2]) if row[2] is not None else '',  # type: ignore
-                'email': str(row[3]) if row[3] is not None else None,  # type: ignore
-                'role': str(row[4]) if row[4] is not None else 'user'  # type: ignore
-            }
+        # Essayer d'abord avec les colonnes d'abonnement
+        try:
+            cursor.execute('''
+                SELECT id, username, password_hash, email, role, 
+                       subscription_plan, subscription_start_date, subscription_end_date,
+                       monthly_requests_used, monthly_requests_limit
+                FROM users WHERE username = %s
+            ''', (username,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'id': int(row[0]) if row[0] is not None else None,
+                    'username': str(row[1]) if row[1] is not None else '',
+                    'password_hash': str(row[2]) if row[2] is not None else '',
+                    'email': str(row[3]) if row[3] is not None else None,
+                    'role': str(row[4]) if row[4] is not None else 'user',
+                    'subscription_plan': str(row[5]) if row[5] is not None else 'free',
+                    'subscription_start_date': row[6],
+                    'subscription_end_date': row[7],
+                    'monthly_requests_used': int(row[8]) if row[8] is not None else 0,
+                    'monthly_requests_limit': int(row[9]) if row[9] is not None else 30
+                }
+        except Error as e:
+            if "Unknown column" in str(e):
+                # Les colonnes d'abonnement n'existent pas, utiliser une requête simple
+                logger.info("Colonnes d'abonnement non trouvées, utilisation du fallback")
+                cursor.execute('''
+                    SELECT id, username, password_hash, email, role
+                    FROM users WHERE username = %s
+                ''', (username,))
+                row = cursor.fetchone()
+                
+                if row:
+                    return {
+                        'id': int(row[0]) if row[0] is not None else None,
+                        'username': str(row[1]) if row[1] is not None else '',
+                        'password_hash': str(row[2]) if row[2] is not None else '',
+                        'email': str(row[3]) if row[3] is not None else None,
+                        'role': str(row[4]) if row[4] is not None else 'user',
+                        'subscription_plan': 'free',
+                        'subscription_start_date': None,
+                        'subscription_end_date': None,
+                        'monthly_requests_used': 0,
+                        'monthly_requests_limit': 30
+                    }
+            else:
+                # Autre erreur, la relancer
+                raise e
+        
         return None
     except Error as e:
         logger.error(f"Erreur lors de la récupération de l'utilisateur: {e}")
@@ -297,6 +373,102 @@ def update_last_login(username):
         return True
     except Error as e:
         logger.error(f"Erreur lors de la mise à jour de la dernière connexion: {e}")
+        return False
+
+def check_subscription_limits(username):
+    """Vérifier les limites d'abonnement d'un utilisateur"""
+    try:
+        user = get_user_by_username(username)
+        if not user:
+            return {'allowed': False, 'reason': 'Utilisateur non trouvé'}
+        
+        # Vérifier si l'abonnement est expiré
+        if user['subscription_end_date'] and user['subscription_end_date'] < datetime.now():
+            return {'allowed': False, 'reason': 'Abonnement expiré'}
+        
+        # Vérifier les limites de requêtes mensuelles
+        if user['monthly_requests_used'] >= user['monthly_requests_limit']:
+            return {
+                'allowed': False, 
+                'reason': f'Limite mensuelle atteinte ({user["monthly_requests_used"]}/{user["monthly_requests_limit"]} requêtes)',
+                'used': user['monthly_requests_used'],
+                'limit': user['monthly_requests_limit']
+            }
+        
+        return {
+            'allowed': True,
+            'used': user['monthly_requests_used'],
+            'limit': user['monthly_requests_limit'],
+            'remaining': user['monthly_requests_limit'] - user['monthly_requests_used'],
+            'plan': user['subscription_plan']
+        }
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification des limites d'abonnement: {e}")
+        return {'allowed': False, 'reason': 'Erreur lors de la vérification des limites'}
+
+def increment_request_usage(username):
+    """Incrémenter le compteur de requêtes utilisées"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE users 
+            SET monthly_requests_used = monthly_requests_used + 1 
+            WHERE username = %s
+        ''', (username,))
+        
+        conn.commit()
+        return True
+    except Error as e:
+        logger.error(f"Erreur lors de l'incrémentation du compteur de requêtes: {e}")
+        return False
+
+def reset_monthly_usage():
+    """Réinitialiser les compteurs mensuels (à exécuter mensuellement)"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        cursor.execute('UPDATE users SET monthly_requests_used = 0')
+        conn.commit()
+        logger.info("Compteurs mensuels réinitialisés")
+        return True
+    except Error as e:
+        logger.error(f"Erreur lors de la réinitialisation des compteurs: {e}")
+        return False
+
+def upgrade_user_subscription(username, plan, requests_limit):
+    """Mettre à jour l'abonnement d'un utilisateur"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        
+        # Calculer la date de fin d'abonnement (1 mois)
+        end_date = datetime.now() + timedelta(days=30)
+        
+        cursor.execute('''
+            UPDATE users 
+            SET subscription_plan = %s, 
+                monthly_requests_limit = %s,
+                subscription_start_date = CURRENT_TIMESTAMP,
+                subscription_end_date = %s,
+                monthly_requests_used = 0
+            WHERE username = %s
+        ''', (plan, requests_limit, end_date, username))
+        
+        conn.commit()
+        logger.info(f"Abonnement mis à jour pour {username}: {plan} ({requests_limit} requêtes)")
+        return True
+    except Error as e:
+        logger.error(f"Erreur lors de la mise à jour de l'abonnement: {e}")
         return False
 
 def log_api_usage(user_id, endpoint, status_code, domain=None):
@@ -669,6 +841,228 @@ def logout():
         logger.error(f"Erreur lors de la déconnexion: {e}")
         return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
 
+@app.route('/api/auth/forgot-password', methods=['POST'])
+@limiter.limit("3 per hour")
+def forgot_password():
+    """Endpoint pour demander la réinitialisation du mot de passe"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
+        
+        email = data.get('email')
+        if not email:
+            return jsonify({'success': False, 'message': 'Email requis'}), 400
+        
+        # Validation basique de l'email
+        if '@' not in email or '.' not in email:
+            return jsonify({'success': False, 'message': 'Format d\'email invalide'}), 400
+        
+        # Rechercher l'utilisateur par email
+        user = get_user_by_email(email)
+        if not user:
+            # Pour des raisons de sécurité, ne pas révéler si l'email existe ou non
+            logger.info(f"Demande de réinitialisation pour un email inexistant: {email}")
+            return jsonify({
+                'success': True,
+                'message': 'Si cet email existe dans notre base de données, vous recevrez un lien de réinitialisation.'
+            }), 200
+        
+        # Créer un token de réinitialisation
+        token = create_password_reset_token(user['id'])
+        if not token:
+            return jsonify({'success': False, 'message': 'Erreur lors de la création du token'}), 500
+        
+        # Construire l'URL de réinitialisation
+        frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+        reset_url = f"{frontend_url}/reset-password?token={token}"
+        
+        # Envoyer l'email
+        email_sent = send_password_reset_email(email, user['username'], reset_url)
+        
+        if email_sent:
+            log_api_usage(user['username'], 'forgot_password', 200)
+            logger.info(f"Demande de réinitialisation traitée pour: {email}")
+            return jsonify({
+                'success': True,
+                'message': 'Si cet email existe dans notre base de données, vous recevrez un lien de réinitialisation.'
+            }), 200
+        else:
+            log_api_usage(user['username'], 'forgot_password', 500)
+            return jsonify({'success': False, 'message': 'Erreur lors de l\'envoi de l\'email'}), 500
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la demande de réinitialisation: {e}")
+        return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
+@app.route('/api/auth/reset-password', methods=['POST'])
+@limiter.limit("5 per hour")
+def reset_password():
+    """Endpoint pour réinitialiser le mot de passe avec un token"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
+        
+        token = data.get('token')
+        new_password = data.get('new_password')
+        
+        if not token or not new_password:
+            return jsonify({'success': False, 'message': 'Token et nouveau mot de passe requis'}), 400
+        
+        # Validation du mot de passe
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'message': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+        
+        # Vérifier le token
+        user_id = verify_password_reset_token(token)
+        if not user_id:
+            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 400
+        
+        # Mettre à jour le mot de passe
+        success = update_user_password(user_id, new_password)
+        if not success:
+            return jsonify({'success': False, 'message': 'Erreur lors de la mise à jour du mot de passe'}), 500
+        
+        # Marquer le token comme utilisé
+        mark_token_as_used(token)
+        
+        # Récupérer les informations de l'utilisateur pour le logging
+        user = None
+        try:
+            conn = get_mysql_connection()
+            if conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT username FROM users WHERE id = %s', (user_id,))
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    user = str(row[0])
+        except Exception as e:
+            logger.warning(f"Impossible de récupérer le nom d'utilisateur: {e}")
+            user = 'unknown'
+        
+        log_api_usage(user, 'reset_password', 200)
+        logger.info(f"Mot de passe réinitialisé avec succès pour l'utilisateur {user_id}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Mot de passe réinitialisé avec succès. Vous pouvez maintenant vous connecter.'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la réinitialisation du mot de passe: {e}")
+        return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
+@app.route('/api/auth/verify-reset-token', methods=['POST'])
+def verify_reset_token():
+    """Endpoint pour vérifier la validité d'un token de réinitialisation"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
+        
+        token = data.get('token')
+        if not token:
+            return jsonify({'success': False, 'message': 'Token requis'}), 400
+        
+        # Vérifier le token
+        user_id = verify_password_reset_token(token)
+        if user_id:
+            return jsonify({
+                'success': True,
+                'message': 'Token valide',
+                'valid': True
+            }), 200
+        else:
+            return jsonify({
+                'success': True,
+                'message': 'Token invalide ou expiré',
+                'valid': False
+            }), 200
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification du token: {e}")
+        return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
+@app.route('/api/subscription/upgrade', methods=['POST'])
+@jwt_required()
+def upgrade_subscription():
+    """Endpoint pour mettre à niveau l'abonnement d'un utilisateur"""
+    try:
+        current_user = get_jwt_identity()
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
+        
+        plan = data.get('plan')
+        if not plan or plan not in ['free', 'pro']:
+            return jsonify({'success': False, 'message': 'Plan invalide'}), 400
+        
+        # Définir les limites selon le plan
+        plan_limits = {
+            'free': 30,
+            'pro': 10000
+        }
+        
+        requests_limit = plan_limits.get(plan, 30)
+        
+        # Mettre à jour l'abonnement
+        success = upgrade_user_subscription(current_user, plan, requests_limit)
+        
+        if success:
+            log_api_usage(current_user, 'subscription_upgrade', 200)
+            return jsonify({
+                'success': True,
+                'message': f'Abonnement mis à niveau vers {plan} avec succès',
+                'plan': plan,
+                'requests_limit': requests_limit
+            }), 200
+        else:
+            log_api_usage(current_user, 'subscription_upgrade', 500)
+            return jsonify({'success': False, 'message': 'Erreur lors de la mise à niveau'}), 500
+            
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à niveau de l'abonnement: {e}")
+        return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
+@app.route('/api/subscription/status', methods=['GET'])
+@jwt_required()
+def get_subscription_status():
+    """Endpoint pour obtenir le statut de l'abonnement d'un utilisateur"""
+    try:
+        current_user = get_jwt_identity()
+        
+        # Vérifier les limites d'abonnement
+        subscription_check = check_subscription_limits(current_user)
+        
+        # Récupérer les informations détaillées de l'utilisateur
+        user = get_user_by_username(current_user)
+        
+        if user:
+            subscription_info = {
+                'plan': user['subscription_plan'],
+                'used': user['monthly_requests_used'],
+                'limit': user['monthly_requests_limit'],
+                'remaining': user['monthly_requests_limit'] - user['monthly_requests_used'],
+                'subscription_start_date': user['subscription_start_date'],
+                'subscription_end_date': user['subscription_end_date'],
+                'allowed': subscription_check['allowed']
+            }
+        else:
+            subscription_info = subscription_check
+        
+        log_api_usage(current_user, 'subscription_status', 200)
+        
+        return jsonify({
+            'success': True,
+            'subscription': subscription_info
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération du statut d'abonnement: {e}")
+        return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
 # --- DASHBOARD ENDPOINTS ---
 @app.route('/api/dashboard/stats', methods=['GET'])
 @jwt_required()
@@ -680,6 +1074,9 @@ def get_dashboard_stats():
         # Statistiques utilisateur
         user_stats = get_user_stats(current_user)
         
+        # Récupérer les informations d'abonnement réelles
+        user = get_user_by_username(current_user)
+        
         # Configuration API
         api_config = {
             'has_scrapedo': HAS_SCRAPEDO,
@@ -688,16 +1085,28 @@ def get_dashboard_stats():
             'groq_token': GROQ_API_KEY[:10] + '...' if GROQ_API_KEY else None
         }
         
-        # Informations d'abonnement (simulées)
-        subscription = {
-            'plan': 'Free',
-            'api_calls_used': user_stats['general']['total_requests'],
-            'api_calls_limit': 1000,
-            'concurrent_calls_used': 0,
-            'concurrent_calls_limit': 5,
-            'renew_date': (datetime.now() + timedelta(days=30)).strftime('%d.%m.%Y %H:%M'),
-            'owner': 'diandiallo974@gmail.com'
-        }
+        # Informations d'abonnement réelles
+        if user:
+            subscription = {
+                'plan': user['subscription_plan'].capitalize(),
+                'api_calls_used': user['monthly_requests_used'],
+                'api_calls_limit': user['monthly_requests_limit'],
+                'concurrent_calls_used': 0,  # Pas encore implémenté
+                'concurrent_calls_limit': 5,  # Pas encore implémenté
+                'renew_date': user['subscription_end_date'].strftime('%d.%m.%Y %H:%M') if user['subscription_end_date'] else (datetime.now() + timedelta(days=30)).strftime('%d.%m.%Y %H:%M'),
+                'owner': user.get('email', 'diandiallo974@gmail.com')
+            }
+        else:
+            # Fallback si l'utilisateur n'est pas trouvé
+            subscription = {
+                'plan': 'Free',
+                'api_calls_used': user_stats['general']['total_requests'],
+                'api_calls_limit': 30,
+                'concurrent_calls_used': 0,
+                'concurrent_calls_limit': 5,
+                'renew_date': (datetime.now() + timedelta(days=30)).strftime('%d.%m.%Y %H:%M'),
+                'owner': 'diandiallo974@gmail.com'
+            }
         
         log_api_usage(current_user, 'dashboard_stats', 200)
         
@@ -779,6 +1188,16 @@ def extract_articles():
     """Scraping multi-fallback (Scrape.do, requests, Selenium, Playwright) + pagination + résumé IA + fallback extraction IA"""
     try:
         current_user = get_jwt_identity()
+        
+        # Vérifier les limites d'abonnement
+        subscription_check = check_subscription_limits(current_user)
+        if not subscription_check['allowed']:
+            return jsonify({
+                'success': False, 
+                'message': subscription_check['reason'],
+                'subscription_info': subscription_check
+            }), 429  # Too Many Requests
+        
         data = request.get_json()
         if not data:
             return jsonify({'success': False, 'message': 'Données JSON requises'}), 400
@@ -902,52 +1321,70 @@ def extract_articles():
                                 if not url:  # Si pas de lien trouvé, utiliser l'URL courante
                                     url = url_to_scrape
                                 if title:  # Ajouter l'article si on a au moins un titre
-                                    # Amélioration de l'extraction du contenu
+                                    # Amélioration de l'extraction du contenu - Approche plus agressive
                                     content_parts = []
+                                    date_str = ""
                                     
                                     # Priorité 1: Paragraphes principaux
                                     paragraphs = element.find_all('p')
                                     for p in paragraphs:
                                         txt = p.get_text(strip=True)
-                                        if txt and len(txt) > 20:  # Filtrer les textes trop courts
-                                            content_parts.append(txt)
-                                    
-                                    # Priorité 2: Sous-titres si pas assez de contenu
-                                    if len(content_parts) < 2:
-                                        subtitles = element.find_all(['h2', 'h3', 'h4', 'h5', 'h6'])
-                                        for subtitle in subtitles:
-                                            txt = subtitle.get_text(strip=True)
-                                            if txt and len(txt) > 10 and txt != title:
+                                        if txt and len(txt) > 15 and txt != title:
+                                            # Éviter les doublons
+                                            if not any(txt in existing for existing in content_parts):
                                                 content_parts.append(txt)
                                     
-                                    # Priorité 3: Listes si pas assez de contenu
-                                    if len(content_parts) < 3:
-                                        lists = element.find_all(['ul', 'ol'])
-                                        for list_elem in lists:
-                                            if isinstance(list_elem, Tag):
-                                                items = list_elem.find_all('li')
-                                                for item in items:
-                                                    txt = item.get_text(strip=True)
-                                                    if txt and len(txt) > 15:
+                                    # Priorité 2: Contenu des divs avec classe spécifique
+                                    content_divs = element.find_all('div', class_=lambda x: x and any(keyword in x.lower() for keyword in [
+                                        'content', 'text', 'body', 'article', 'post', 'entry', 'description', 'excerpt', 'summary'
+                                    ]))
+                                    for div in content_divs:
+                                        txt = div.get_text(strip=True)
+                                        if txt and len(txt) > 30 and txt != title:
+                                            if not any(txt in existing for existing in content_parts):
+                                                content_parts.append(txt)
+                                    
+                                    # Priorité 3: Sous-titres et intertitres
+                                    subtitles = element.find_all(['h2', 'h3', 'h4', 'h5', 'h6'])
+                                    for subtitle in subtitles:
+                                        txt = subtitle.get_text(strip=True)
+                                        if txt and len(txt) > 10 and txt != title:
+                                            if not any(txt in existing for existing in content_parts):
+                                                content_parts.append(txt)
+                                    
+                                    # Priorité 4: Listes (ul, ol)
+                                    lists = element.find_all(['ul', 'ol'])
+                                    for list_elem in lists:
+                                        if isinstance(list_elem, Tag):
+                                            items = list_elem.find_all('li')
+                                            for item in items:
+                                                txt = item.get_text(strip=True)
+                                                if txt and len(txt) > 10:
+                                                    if not any(txt in existing for existing in content_parts):
                                                         content_parts.append(txt)
                                     
-                                    # Priorité 4: Div avec contenu textuel
-                                    if len(content_parts) < 2:
-                                        divs = element.find_all('div')
-                                        for div in divs:
-                                            txt = div.get_text(strip=True)
-                                            if txt and len(txt) > 30 and txt != title:
-                                                # Éviter les doublons
-                                                if not any(txt in existing for existing in content_parts):
-                                                    content_parts.append(txt)
+                                    # Priorité 5: Spans avec contenu textuel
+                                    spans = element.find_all('span')
+                                    for span in spans:
+                                        txt = span.get_text(strip=True)
+                                        if txt and len(txt) > 20 and txt != title:
+                                            if not any(txt in existing for existing in content_parts):
+                                                content_parts.append(txt)
                                     
-                                    # Priorité 5: Span avec contenu textuel
-                                    if len(content_parts) < 2:
-                                        spans = element.find_all('span')
-                                        for span in spans:
-                                            txt = span.get_text(strip=True)
-                                            if txt and len(txt) > 25 and txt != title:
-                                                # Éviter les doublons
+                                    # Priorité 6: Contenu des sections
+                                    sections = element.find_all('section')
+                                    for section in sections:
+                                        txt = section.get_text(strip=True)
+                                        if txt and len(txt) > 50 and txt != title:
+                                            if not any(txt in existing for existing in content_parts):
+                                                content_parts.append(txt)
+                                    
+                                    # Priorité 7: Contenu des articles imbriqués
+                                    nested_articles = element.find_all('article')
+                                    for nested_article in nested_articles:
+                                        if nested_article != element:  # Éviter la récursion
+                                            txt = nested_article.get_text(strip=True)
+                                            if txt and len(txt) > 30 and txt != title:
                                                 if not any(txt in existing for existing in content_parts):
                                                     content_parts.append(txt)
                                     
@@ -959,15 +1396,29 @@ def extract_articles():
                                     content = re.sub(r'\s+', ' ', content)  # Normaliser les espaces
                                     content = content.strip()
                                     
+                                    # Si le contenu est insuffisant, essayer d'extraire depuis l'URL de l'article
+                                    if not content or len(content) < 100:
+                                        if url and url != url_to_scrape:
+                                            logger.info(f"Contenu insuffisant, tentative d'extraction depuis l'URL: {url}")
+                                            full_article = extract_article_from_url(url, url_to_scrape)
+                                            if full_article and full_article.get('content'):
+                                                content = full_article['content']
+                                                # Mettre à jour le titre si meilleur
+                                                if full_article.get('title') and len(full_article['title']) > len(title):
+                                                    title = full_article['title']
+                                                # Mettre à jour la date si disponible
+                                                if full_article.get('date'):
+                                                    date_str = full_article['date']
+                                    
                                     # Vérifier que le contenu est suffisant
-                                    if content and len(content) > 30:  # Réduit de 50 à 30 pour être moins strict
+                                    if content and len(content) > 30:  # Réduit pour être moins strict
                                         # Ajouter une date si disponible
-                                        date_elem = element.find(['time', 'span.date', 'div.date', 'span.timestamp', 'span.time', 'div.time'])
-                                        date_str = ""
-                                        if date_elem:
-                                            date_str = date_elem.get_text(strip=True)
-                                            # Nettoyer la date
-                                            date_str = re.sub(r'[^\w\s\-/]', '', date_str)
+                                        if not date_str:
+                                            date_elem = element.find(['time', 'span.date', 'div.date', 'span.timestamp', 'span.time', 'div.time'])
+                                            if date_elem:
+                                                date_str = date_elem.get_text(strip=True)
+                                                # Nettoyer la date
+                                                date_str = re.sub(r'[^\w\s\-/]', '', date_str)
                                         
                                         article_data = {
                                             'title': title,
@@ -1118,6 +1569,9 @@ Ta mission : extraire tous les articles (titre, url, date, contenu principal) et
         log_scraping_history(current_user, site_url, method_used, len(articles), 'success')
         logger.info(f"Scraping terminé avec succès: {len(articles)} articles extraits via {method_used}")
         
+        # Incrémenter le compteur de requêtes utilisées
+        increment_request_usage(current_user)
+        
         log_api_usage(current_user, 'scraping_extract', 200, domain)
         
         # Préparer la réponse avec des informations détaillées
@@ -1129,7 +1583,8 @@ Ta mission : extraire tous les articles (titre, url, date, contenu principal) et
             'domain': domain,
             'feedback': feedback,
             'processing_time': f"{time.time() - start_time:.2f}s",
-            'articles_with_summaries': sum(1 for a in articles if a.get('resume') and 'non disponible' not in a.get('resume', ''))
+            'articles_with_summaries': sum(1 for a in articles if a.get('resume') and 'non disponible' not in a.get('resume', '')),
+            'subscription_info': subscription_check
         }
         
         return jsonify(response_data), 200
@@ -1218,6 +1673,330 @@ def not_found(error):
 def internal_error(error):
     logger.error(f"Erreur interne du serveur: {error}")
     return jsonify({'success': False, 'message': 'Erreur interne du serveur'}), 500
+
+def get_user_by_email(email):
+    """Récupérer un utilisateur par son email"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return None
+            
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, username, password_hash, email, role FROM users WHERE email = %s', (email,))
+        row = cursor.fetchone()
+        
+        if row:
+            return {
+                'id': int(row[0]) if row[0] is not None else None,
+                'username': str(row[1]) if row[1] is not None else '',
+                'password_hash': str(row[2]) if row[2] is not None else '',
+                'email': str(row[3]) if row[3] is not None else None,
+                'role': str(row[4]) if row[4] is not None else 'user'
+            }
+        return None
+    except Error as e:
+        logger.error(f"Erreur lors de la récupération de l'utilisateur par email: {e}")
+        return None
+
+def create_password_reset_token(user_id):
+    """Créer un token de réinitialisation de mot de passe"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return None
+            
+        cursor = conn.cursor()
+        
+        # Générer un token sécurisé
+        token = secrets.token_urlsafe(32)
+        
+        # Expiration dans 1 heure
+        expires_at = datetime.now() + timedelta(hours=1)
+        
+        # Supprimer les anciens tokens non utilisés pour cet utilisateur
+        cursor.execute('DELETE FROM password_reset_tokens WHERE user_id = %s AND used = FALSE', (user_id,))
+        
+        # Insérer le nouveau token
+        cursor.execute('''
+            INSERT INTO password_reset_tokens (user_id, token, expires_at)
+            VALUES (%s, %s, %s)
+        ''', (user_id, token, expires_at))
+        
+        conn.commit()
+        logger.info(f"Token de réinitialisation créé pour l'utilisateur {user_id}")
+        return token
+    except Error as e:
+        logger.error(f"Erreur lors de la création du token de réinitialisation: {e}")
+        return None
+
+def verify_password_reset_token(token):
+    """Vérifier un token de réinitialisation de mot de passe"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return None
+            
+        cursor = conn.cursor()
+        
+        # Vérifier le token
+        cursor.execute('''
+            SELECT user_id, expires_at, used 
+            FROM password_reset_tokens 
+            WHERE token = %s
+        ''', (token,))
+        
+        row = cursor.fetchone()
+        if not row:
+            return None
+            
+        user_id = int(row[0]) if row[0] is not None else None
+        expires_at = row[1]
+        used = bool(row[2])
+        
+        # Vérifier si le token est expiré ou déjà utilisé
+        if used or expires_at < datetime.now():
+            return None
+            
+        return user_id
+    except Error as e:
+        logger.error(f"Erreur lors de la vérification du token: {e}")
+        return None
+
+def mark_token_as_used(token):
+    """Marquer un token comme utilisé"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        cursor.execute('UPDATE password_reset_tokens SET used = TRUE WHERE token = %s', (token,))
+        conn.commit()
+        return True
+    except Error as e:
+        logger.error(f"Erreur lors du marquage du token comme utilisé: {e}")
+        return False
+
+def update_user_password(user_id, new_password):
+    """Mettre à jour le mot de passe d'un utilisateur"""
+    try:
+        conn = get_mysql_connection()
+        if not conn:
+            return False
+            
+        cursor = conn.cursor()
+        password_hash = generate_password_hash(new_password)
+        
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash, user_id))
+        conn.commit()
+        
+        logger.info(f"Mot de passe mis à jour pour l'utilisateur {user_id}")
+        return True
+    except Error as e:
+        logger.error(f"Erreur lors de la mise à jour du mot de passe: {e}")
+        return False
+
+def send_password_reset_email(email, username, reset_url):
+    """Envoyer un email de réinitialisation de mot de passe"""
+    try:
+        # Vérifier la configuration SMTP
+        if not SMTP_CONFIG['username'] or not SMTP_CONFIG['password']:
+            logger.warning("Configuration SMTP manquante - email non envoyé")
+            return False
+        
+        # Créer le message
+        msg = MIMEMultipart()
+        msg['From'] = SMTP_CONFIG['username']
+        msg['To'] = email
+        msg['Subject'] = 'Réinitialisation de votre mot de passe - FinData'
+        
+        # Corps du message
+        body = f"""
+        <html>
+        <body>
+            <h2>Bonjour {username},</h2>
+            <p>Vous avez demandé la réinitialisation de votre mot de passe pour votre compte FinData.</p>
+            <p>Cliquez sur le lien ci-dessous pour définir un nouveau mot de passe :</p>
+            <p><a href="{reset_url}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
+            <p>Ce lien expirera dans 1 heure.</p>
+            <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+            <br>
+            <p>Cordialement,<br>L'équipe FinData</p>
+        </body>
+        </html>
+        """
+        
+        msg.attach(MIMEText(body, 'html'))
+        
+        # Connexion SMTP
+        if SMTP_CONFIG['use_ssl']:
+            server = smtplib.SMTP_SSL(SMTP_CONFIG['host'], SMTP_CONFIG['port'])
+        else:
+            server = smtplib.SMTP(SMTP_CONFIG['host'], SMTP_CONFIG['port'])
+            if SMTP_CONFIG['use_tls']:
+                server.starttls()
+        
+        # Authentification
+        server.login(SMTP_CONFIG['username'], SMTP_CONFIG['password'])
+        
+        # Envoi de l'email
+        server.send_message(msg)
+        server.quit()
+        
+        logger.info(f"Email de réinitialisation envoyé à {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Erreur lors de l'envoi de l'email: {e}")
+        return False
+
+def extract_full_article_content(element, title):
+    """
+    Extrait le contenu complet d'un article avec une approche hiérarchique
+    """
+    content_parts = []
+    
+    # 1. Paragraphes principaux (priorité haute)
+    paragraphs = element.find_all('p')
+    for p in paragraphs:
+        txt = p.get_text(strip=True)
+        if txt and len(txt) > 15 and txt != title:
+            # Éviter les doublons
+            if not any(txt in existing for existing in content_parts):
+                content_parts.append(txt)
+    
+    # 2. Contenu des divs avec classe spécifique
+    content_divs = element.find_all('div', class_=lambda x: x and any(keyword in x.lower() for keyword in [
+        'content', 'text', 'body', 'article', 'post', 'entry', 'description', 'excerpt', 'summary'
+    ]))
+    for div in content_divs:
+        txt = div.get_text(strip=True)
+        if txt and len(txt) > 30 and txt != title:
+            if not any(txt in existing for existing in content_parts):
+                content_parts.append(txt)
+    
+    # 3. Sous-titres et intertitres
+    subtitles = element.find_all(['h2', 'h3', 'h4', 'h5', 'h6'])
+    for subtitle in subtitles:
+        txt = subtitle.get_text(strip=True)
+        if txt and len(txt) > 10 and txt != title:
+            if not any(txt in existing for existing in content_parts):
+                content_parts.append(txt)
+    
+    # 4. Listes (ul, ol)
+    lists = element.find_all(['ul', 'ol'])
+    for list_elem in lists:
+        if isinstance(list_elem, Tag):
+            items = list_elem.find_all('li')
+            for item in items:
+                txt = item.get_text(strip=True)
+                if txt and len(txt) > 10:
+                    if not any(txt in existing for existing in content_parts):
+                        content_parts.append(txt)
+    
+    # 5. Spans avec contenu textuel
+    spans = element.find_all('span')
+    for span in spans:
+        txt = span.get_text(strip=True)
+        if txt and len(txt) > 20 and txt != title:
+            if not any(txt in existing for existing in content_parts):
+                content_parts.append(txt)
+    
+    # 6. Contenu des sections
+    sections = element.find_all('section')
+    for section in sections:
+        txt = section.get_text(strip=True)
+        if txt and len(txt) > 50 and txt != title:
+            if not any(txt in existing for existing in content_parts):
+                content_parts.append(txt)
+    
+    # 7. Contenu des articles imbriqués
+    nested_articles = element.find_all('article')
+    for nested_article in nested_articles:
+        if nested_article != element:  # Éviter la récursion
+            txt = nested_article.get_text(strip=True)
+            if txt and len(txt) > 30 and txt != title:
+                if not any(txt in existing for existing in content_parts):
+                    content_parts.append(txt)
+    
+    # Assembler le contenu
+    content = '\n\n'.join(content_parts)
+    
+    # Nettoyer le contenu
+    content = re.sub(r'\n{3,}', '\n\n', content)  # Supprimer les sauts de ligne multiples
+    content = re.sub(r'\s+', ' ', content)  # Normaliser les espaces
+    content = content.strip()
+    
+    return content
+
+def extract_article_from_url(article_url, base_url):
+    """
+    Tente d'extraire le contenu complet d'un article depuis son URL
+    """
+    try:
+        # Essayer d'abord avec Scrape.do
+        try:
+            html = get_site_content_professional(article_url)
+        except:
+            # Fallback avec requests
+            response = requests.get(article_url, timeout=15, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            })
+            response.raise_for_status()
+            html = response.text
+        
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Chercher le contenu principal de l'article
+        content_selectors = [
+            'article', 'main', '.article-content', '.post-content', '.entry-content',
+            '.content', '.article-body', '.post-body', '.entry-body',
+            '.article-text', '.post-text', '.entry-text', '.article-main',
+            '.post-main', '.entry-main', '.article-wrapper', '.post-wrapper',
+            '.entry-wrapper', '.article-container', '.post-container', '.entry-container'
+        ]
+        
+        content_element = None
+        for selector in content_selectors:
+            content_element = soup.select_one(selector)
+            if content_element:
+                break
+        
+        if not content_element:
+            # Fallback: chercher le plus grand bloc de texte
+            text_blocks = soup.find_all(['div', 'section', 'article'])
+            max_length = 0
+            for block in text_blocks:
+                text = block.get_text(strip=True)
+                if len(text) > max_length:
+                    max_length = len(text)
+                    content_element = block
+        
+        if content_element:
+            # Extraire le titre
+            title_elem = content_element.find(['h1', 'h2', 'h3']) or soup.find(['h1', 'h2', 'h3'])
+            title = title_elem.get_text(strip=True) if title_elem else "Article"
+            
+            # Extraire le contenu complet
+            content = extract_full_article_content(content_element, title)
+            
+            # Extraire la date
+            date_elem = content_element.find(['time', 'span.date', 'div.date', 'span.timestamp', 'span.time', 'div.time']) or soup.find(['time', 'span.date', 'div.date', 'span.timestamp', 'span.time', 'div.time'])
+            date_str = ""
+            if date_elem:
+                date_str = date_elem.get_text(strip=True)
+                date_str = re.sub(r'[^\w\s\-/]', '', date_str)
+            
+            return {
+                'title': title,
+                'url': article_url,
+                'content': content,
+                'date': date_str if date_str else None
+            }
+    
+    except Exception as e:
+        logger.warning(f"Erreur lors de l'extraction de l'article {article_url}: {e}")
+    
+    return None
 
 if __name__ == '__main__':
     # Initialiser la base de données au démarrage

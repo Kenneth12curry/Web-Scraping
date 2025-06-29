@@ -42,7 +42,9 @@ const ProtectedRoute = ({ children }) => {
   useEffect(() => {
     const checkAuth = () => {
       const token = localStorage.getItem('token');
-      if (token) {
+      const user = localStorage.getItem('user');
+      
+      if (token && user) {
         // Vérifier la validité du token (optionnel)
         setIsAuthenticated(true);
       } else {
@@ -52,6 +54,19 @@ const ProtectedRoute = ({ children }) => {
     };
 
     checkAuth();
+    
+    // Écouter les changements d'authentification
+    const handleAuthChange = () => {
+      const token = localStorage.getItem('token');
+      const user = localStorage.getItem('user');
+      setIsAuthenticated(!!(token && user));
+    };
+    
+    window.addEventListener('authChange', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('authChange', handleAuthChange);
+    };
   }, []);
 
   if (isLoading) {
@@ -74,7 +89,8 @@ const App = () => {
     // Simuler un temps de chargement initial
     const timer = setTimeout(() => {
       const token = localStorage.getItem('token');
-      setIsAuthenticated(!!token);
+      const user = localStorage.getItem('user');
+      setIsAuthenticated(!!(token && user));
       setIsLoading(false);
     }, 1500);
 
@@ -85,7 +101,8 @@ const App = () => {
   useEffect(() => {
     const handleStorageChange = () => {
       const token = localStorage.getItem('token');
-      setIsAuthenticated(!!token);
+      const user = localStorage.getItem('user');
+      setIsAuthenticated(!!(token && user));
     };
 
     // Écouter les changements de localStorage
@@ -94,7 +111,8 @@ const App = () => {
     // Écouter les changements personnalisés
     const handleAuthChange = () => {
       const token = localStorage.getItem('token');
-      setIsAuthenticated(!!token);
+      const user = localStorage.getItem('user');
+      setIsAuthenticated(!!(token && user));
     };
     
     window.addEventListener('authChange', handleAuthChange);
@@ -151,12 +169,15 @@ const App = () => {
             } 
           />
           
-          {/* Routes protégées sans Navigation */}
+          {/* Routes protégées avec Navigation */}
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute>
-                <Dashboard />
+                <>
+                  <Navigation />
+                  <Dashboard />
+                </>
               </ProtectedRoute>
             }
           />
@@ -165,7 +186,10 @@ const App = () => {
             path="/scraping"
             element={
               <ProtectedRoute>
-                <Scraping />
+                <>
+                  <Navigation />
+                  <Scraping />
+                </>
               </ProtectedRoute>
             }
           />
@@ -174,7 +198,10 @@ const App = () => {
             path="/analytics"
             element={
               <ProtectedRoute>
-                <Analytics />
+                <>
+                  <Navigation />
+                  <Analytics />
+                </>
               </ProtectedRoute>
             }
           />
@@ -183,7 +210,10 @@ const App = () => {
             path="/documentation"
             element={
               <ProtectedRoute>
-                <Documentation />
+                <>
+                  <Navigation />
+                  <Documentation />
+                </>
               </ProtectedRoute>
             }
           />
@@ -192,7 +222,10 @@ const App = () => {
             path="/account"
             element={
               <ProtectedRoute>
-                <Account />
+                <>
+                  <Navigation />
+                  <Account />
+                </>
               </ProtectedRoute>
             }
           />

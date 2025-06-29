@@ -76,7 +76,7 @@ const Scraping = () => {
       'Connexion au site...',
       'Analyse de la structure...',
       'Extraction des articles...',
-      'Génération des résumés IA...',
+      'Génération des résumés IA (peut prendre 1-2 minutes)...',
       'Finalisation...'
     ];
     let stepIndex = 0;
@@ -361,15 +361,58 @@ const Scraping = () => {
               </div>
               <div className="articles-list">
                 {results.articles.map((article, index) => (
-                  <div key={index} className="article-item">
+                  <div key={index} className="article-item" id={`article-${index}`}>
                     <div className="article-header">
                       <h3 className="article-title">
                         <a href={article.url} target="_blank" rel="noopener noreferrer">{article.title}</a>
                       </h3>
                       {article.date && <span className="article-date"><i className="fas fa-calendar"></i> {article.date}</span>}
                     </div>
-                    <div className="article-content">{article.content.substring(0, 200)}...</div>
-                    {article.resume && <p className="article-resume">{article.resume}</p>}
+                    <div className="article-content">
+                      <div className="content-preview">
+                        {article.content.length > 500 ? (
+                          <>
+                            <div className="content-text">
+                              {article.content.substring(0, 500)}...
+                            </div>
+                            <button 
+                              className="show-more-btn"
+                              onClick={() => {
+                                const contentDiv = document.querySelector(`#article-${index} .content-text`);
+                                const btn = document.querySelector(`#article-${index} .show-more-btn`);
+                                if (contentDiv.textContent.includes('...')) {
+                                  contentDiv.textContent = article.content;
+                                  btn.innerHTML = '<i className="fas fa-chevron-up"></i> Voir moins';
+                                } else {
+                                  contentDiv.textContent = article.content.substring(0, 500) + '...';
+                                  btn.innerHTML = '<i className="fas fa-chevron-down"></i> Voir plus';
+                                }
+                              }}
+                            >
+                              <i className="fas fa-chevron-down"></i> Voir plus
+                            </button>
+                          </>
+                        ) : (
+                          <div className="content-text">{article.content}</div>
+                        )}
+                      </div>
+                      <div className="content-stats">
+                        <span className="content-length">
+                          <i className="fas fa-text-width"></i> {article.content.length} caractères
+                        </span>
+                        <span className="content-words">
+                          <i className="fas fa-words"></i> {article.content.split(' ').length} mots
+                        </span>
+                      </div>
+                    </div>
+                    {article.resume && (
+                      <div className="article-resume">
+                        <div className="resume-header">
+                          <i className="fas fa-brain"></i> Résumé IA
+                        </div>
+                        <p>{article.resume}</p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

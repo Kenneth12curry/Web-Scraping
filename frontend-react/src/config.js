@@ -4,7 +4,7 @@ const config = {
   API_BASE_URL: process.env.REACT_APP_API_URL || 'http://localhost:8080/api',
   
   // Timeouts
-  REQUEST_TIMEOUT: 30000, // 30 secondes
+  REQUEST_TIMEOUT: 120000, // 120 secondes (2 minutes) pour permettre les résumés IA
   
   // Retry configuration
   MAX_RETRIES: 3,

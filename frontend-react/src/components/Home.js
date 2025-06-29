@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import './Home.css';
 
 const Home = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -260,7 +261,7 @@ const Home = () => {
       </section>
 
       {/* Benefits Section */}
-      <section className="benefits-section py-5 bg-light">
+      <section className="benefits-section py-5">
         <div className="container">
           <div className="text-center mb-5">
             <h2 className="section-title">Pourquoi Choisir FinData IA-M.K ?</h2>
@@ -449,7 +450,7 @@ const Home = () => {
       </section>
 
       {/* Testimonials Section */}
-      <section className="testimonials-section py-5 bg-light">
+      <section className="testimonials-section py-5">
         <div className="container">
           <div className="text-center mb-5">
             <h2 className="section-title">Témoignages de Nos Clients</h2>
@@ -644,17 +645,17 @@ const Home = () => {
                 <i className="fas fa-chart-line me-2"></i>
                 <span className="fw-bold">FinData IA-M.K</span>
               </div>
-              <p className="text-muted mt-2">
+              <p className="mt-2">
                 Solution française d'Intelligence Artificielle pour l'analyse et la valorisation des données financières
               </p>
             </div>
             <div className="col-md-6 text-md-end">
               <div className="footer-links">
-                <Link to="/documentation" className="text-muted me-3">Documentation</Link>
-                <Link to="/login" className="text-muted me-3">Connexion</Link>
-                <Link to="/register" className="text-muted">Inscription</Link>
+                <Link to="/documentation" className="me-3">Documentation</Link>
+                <Link to="/login" className="me-3">Connexion</Link>
+                <Link to="/register">Inscription</Link>
               </div>
-              <p className="text-muted mt-2">
+              <p className="mt-2">
                 © 2024 FinData IA-M.K. Tous droits réservés.
               </p>
             </div>

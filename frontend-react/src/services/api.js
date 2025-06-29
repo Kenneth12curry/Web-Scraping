@@ -10,6 +10,8 @@ const api = axios.create({
   }
 });
 
+console.log('🔧 Configuration API - Timeout:', config.REQUEST_TIMEOUT, 'ms');
+
 // Intercepteur pour ajouter le token d'authentification
 api.interceptors.request.use(
   (config) => {
@@ -140,10 +142,21 @@ export const dashboardService = {
 
 // Service de scraping
 export const scrapingService = {
-  async extractArticles(url, method = 'scrapedo', maxArticles = 20) {
-    return retryRequest(() => 
-      api.post('/scraping/extract', { url, method, max_articles: maxArticles })
-    );
+  async extractArticles(url, method = 'scrapedo', maxArticles = 20, maxIaSummaries = 10) {
+    console.log('🚀 Service API - Début extraction:', { url, method, maxArticles, maxIaSummaries });
+    console.log('⏱️ Service API - Timeout configuré:', config.REQUEST_TIMEOUT, 'ms');
+    
+    return retryRequest(() => {
+      console.log('📡 Service API - Envoi requête au backend avec timeout 3min...');
+      return api.post('/scraping/extract', { 
+        url, 
+        method, 
+        max_articles: maxArticles,
+        max_ia_summaries: maxIaSummaries
+      }, {
+        timeout: 180000 // 3 minutes spécifiquement pour le scraping
+      });
+    });
   }
 };
 

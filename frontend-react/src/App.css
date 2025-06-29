@@ -18,8 +18,8 @@
   
   /* Couleurs de texte */
   --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  --text-muted: #94a3b8;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
   --text-light: #ffffff;
   
   /* Bordures et ombres */
@@ -1284,11 +1284,30 @@ body {
 .stat-card:nth-child(4) { animation-delay: 0.4s; }
 
 /* ===== NAVIGATION PROFESSIONNELLE ===== */
-.navbar {
-  background-color: var(--bg-card);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  padding: var(--spacing-md) 0;
+.navbar,
+.navbar-container {
+  width: 100%;
+  min-width: 0;
+}
+
+.navbar-nav {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--spacing-lg);
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.navbar-actions {
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .navbar-nav {
+    overflow-x: auto;
+    gap: var(--spacing-md);
+  }
 }
 
 .navbar-container {
@@ -3373,6 +3392,31 @@ body {
   overflow: hidden;
   height: 100%;
   box-shadow: var(--shadow-sm);
+  color: var(--text-primary);
+}
+
+.pricing-card * {
+  color: inherit;
+}
+
+.pricing-card .pricing-title {
+  color: var(--text-primary) !important;
+  font-weight: 700;
+}
+
+.pricing-card .pricing-subtitle {
+  color: var(--text-secondary) !important;
+  font-weight: 500;
+}
+
+.pricing-card .feature-item {
+  color: var(--text-primary) !important;
+  font-weight: 500;
+}
+
+.pricing-card .feature-item span {
+  color: var(--text-primary) !important;
+  font-weight: 500;
 }
 
 .pricing-card::before {
@@ -3479,6 +3523,7 @@ body {
   margin-bottom: var(--spacing-md);
   font-size: 0.95rem;
   color: var(--text-primary);
+  font-weight: 500;
 }
 
 .feature-item:last-child {
@@ -3494,6 +3539,7 @@ body {
 
 .feature-item span {
   font-weight: 500;
+  color: var(--text-primary);
 }
 
 /* Bouton d'action */
