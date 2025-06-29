@@ -66,6 +66,7 @@ frontend-react/.env.production.local
 *.swp
 *.swo
 *~
+.history/
 
 # OS
 .DS_Store
