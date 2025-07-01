@@ -465,7 +465,7 @@ def upgrade_user_subscription(username, plan, requests_limit):
         ''', (plan, requests_limit, end_date, username))
         
         conn.commit()
-        logger.info(f"Abonnement mis à jour pour {username}: {plan} ({requests_limit} requêtes)")
+        logger.info(f"Abonnement mis à niveau vers {plan} avec succès")
         return True
     except Error as e:
         logger.error(f"Erreur lors de la mise à jour de l'abonnement: {e}")
@@ -1642,21 +1642,25 @@ def health_check():
             'error': str(e)
         }), 500
 
-# Middleware pour collecter les métriques Prometheus
+# Middleware de monitoring
+from middleware.monitoring import start_request_timer, end_request_timer, log_api_usage
+
+# Enregistrer les middlewares
 @app.before_request
 def before_request():
-    # Stocker le temps de début dans g (contexte Flask)
-    from flask import g
-    g.start_time = time.time()
+    start_request_timer()
 
 @app.after_request
 def after_request(response):
-    # Récupérer le temps de début depuis g
-    from flask import g
-    if hasattr(g, 'start_time'):
-        duration = time.time() - g.start_time
-        REQUEST_LATENCY.labels(method=request.method, endpoint=request.endpoint).observe(duration)
-        REQUEST_COUNT.labels(method=request.method, endpoint=request.endpoint, status=response.status_code).inc()
+    end_request_timer()
+    return log_api_usage(response)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
     return response
 
 # Endpoint pour les métriques Prometheus
@@ -1997,6 +2001,36 @@ def extract_article_from_url(article_url, base_url):
         logger.warning(f"Erreur lors de l'extraction de l'article {article_url}: {e}")
     
     return None
+
+# Importer les routes
+from routes.auth_routes import auth_bp
+from routes.dashboard_routes import dashboard_bp
+from routes.scraping_routes import scraping_bp
+from routes.subscription_routes import subscription_bp
+from routes.health_routes import health_bp
+
+# Enregistrer les blueprints
+app.register_blueprint(auth_bp, url_prefix='/api/auth')
+app.register_blueprint(dashboard_bp, url_prefix='/api/dashboard')
+app.register_blueprint(scraping_bp, url_prefix='/api/scraping')
+app.register_blueprint(subscription_bp, url_prefix='/api/subscription')
+app.register_blueprint(health_bp, url_prefix='/api/health')
+
+# Handler global pour toutes les requêtes OPTIONS sur /api/* (CORS preflight)
+@app.route('/api/<path:path>', methods=['OPTIONS'])
+def options_handler(path):
+    response = app.make_response(('', 204))
+    response.headers['Access-Control-Allow-Origin'] = 'http://localhost:3000'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+    return response
+
+@app.before_request
+def skip_rate_limit_for_options():
+    if request.method == 'OPTIONS':
+        # Désactive le rate limiting pour les requêtes OPTIONS
+        request._rate_limit_exempt = True
 
 if __name__ == '__main__':
     # Initialiser la base de données au démarrage

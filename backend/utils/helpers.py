@@ -221,4 +221,119 @@ def parse_http_headers(headers_str: str) -> Dict[str, str]:
             if ':' in line:
                 key, value = line.split(':', 1)
                 headers[key.strip()] = value.strip()
-    return headers 
+    return headers
+
+def get_user_by_email(email):
+    """Récupérer un utilisateur par son email"""
+    from database.mysql_connector import mysql_connector
+    from werkzeug.security import generate_password_hash
+    from datetime import datetime
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        conn = mysql_connector._get_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        cursor.execute('SELECT id, username, password_hash, email, role FROM users WHERE email = %s', (email,))
+        row = cursor.fetchone()
+        if row:
+            return {
+                'id': int(row[0]) if row[0] is not None else None,
+                'username': str(row[1]) if row[1] is not None else '',
+                'password_hash': str(row[2]) if row[2] is not None else '',
+                'email': str(row[3]) if row[3] is not None else None,
+                'role': str(row[4]) if row[4] is not None else 'user'
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération de l'utilisateur par email: {e}")
+        return None
+
+def create_password_reset_token(user_id):
+    from database.mysql_connector import mysql_connector
+    from datetime import datetime, timedelta
+    import secrets
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        conn = mysql_connector._get_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now() + timedelta(hours=1)
+        cursor.execute('DELETE FROM password_reset_tokens WHERE user_id = %s AND used = FALSE', (user_id,))
+        cursor.execute('''
+            INSERT INTO password_reset_tokens (user_id, token, expires_at)
+            VALUES (%s, %s, %s)
+        ''', (user_id, token, expires_at))
+        conn.commit()
+        logger.info(f"Token de réinitialisation créé pour l'utilisateur {user_id}")
+        return token
+    except Exception as e:
+        logger.error(f"Erreur lors de la création du token de réinitialisation: {e}")
+        return None
+
+def verify_password_reset_token(token):
+    from database.mysql_connector import mysql_connector
+    from datetime import datetime
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        conn = mysql_connector._get_connection()
+        if not conn:
+            return None
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT user_id, expires_at, used 
+            FROM password_reset_tokens 
+            WHERE token = %s
+        ''', (token,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        user_id = int(row[0]) if row[0] is not None else None
+        expires_at = row[1]
+        used = bool(row[2])
+        if used or expires_at < datetime.now():
+            return None
+        return user_id
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification du token: {e}")
+        return None
+
+def mark_token_as_used(token):
+    from database.mysql_connector import mysql_connector
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        conn = mysql_connector._get_connection()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        cursor.execute('UPDATE password_reset_tokens SET used = TRUE WHERE token = %s', (token,))
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erreur lors du marquage du token comme utilisé: {e}")
+        return False
+
+def update_user_password(user_id, new_password):
+    from database.mysql_connector import mysql_connector
+    from werkzeug.security import generate_password_hash
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        conn = mysql_connector._get_connection()
+        if not conn:
+            return False
+        cursor = conn.cursor()
+        password_hash = generate_password_hash(new_password)
+        cursor.execute('UPDATE users SET password_hash = %s WHERE id = %s', (password_hash, user_id))
+        conn.commit()
+        logger.info(f"Mot de passe mis à jour pour l'utilisateur {user_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Erreur lors de la mise à jour du mot de passe: {e}")
+        return False 

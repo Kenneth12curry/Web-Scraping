@@ -20,41 +20,110 @@ from langchain_groq import ChatGroq
 from config import Config
 from database.mysql_connector import mysql_connector
 from database.redis_connector import redis_connector
+import random
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 class ScrapingService:
     """Service de gestion du scraping"""
     
-    def __init__(self):
+    USER_AGENTS = [
+        # Liste de User-Agents courants pour la rotation
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    ]
+    
+    def __init__(self, min_delay: float = 0.5, proxies: Optional[dict] = None):
         self.db = mysql_connector
         self.cache = redis_connector
         self.config = Config
+        self.last_request_time = 0
+        self.min_delay = min_delay  # délai minimum entre deux requêtes (en secondes)
+        self.proxies = proxies  # ex: {"http": "http://proxy:port", "https": "http://proxy:port"}
     
+    def _rate_limit(self):
+        now = time.time()
+        elapsed = now - self.last_request_time
+        if elapsed < self.min_delay:
+            time.sleep(self.min_delay - elapsed)
+        self.last_request_time = time.time()
+
+    def _get_random_user_agent(self):
+        return random.choice(self.USER_AGENTS)
+
+    def _http_get_with_retry(self, url, headers=None, retries=3, backoff=1.5, timeout=10):
+        """GET HTTP avec retry et backoff"""
+        attempt = 0
+        last_exc = None
+        while attempt < retries:
+            try:
+                self._rate_limit()
+                h = headers or {}
+                if 'User-Agent' not in h:
+                    h['User-Agent'] = self._get_random_user_agent()
+                resp = requests.get(url, headers=h, timeout=timeout, proxies=self.proxies)
+                resp.raise_for_status()
+                return resp
+            except Exception as e:
+                last_exc = e
+                logger.warning(f"HTTP GET failed (tentative {attempt+1}/{retries}): {e}")
+                time.sleep(backoff * (attempt + 1))
+                attempt += 1
+        raise last_exc
+
+    def get_html(self, url, method_order=None, max_wait=10) -> str:
+        """Centralise la récupération du HTML avec fallback, rotation UA, proxy, retry, etc."""
+        method_order = method_order or ['requests', 'scrapedo', 'selenium', 'playwright']
+        last_exc = None
+        for method in method_order:
+            try:
+                if method == 'scrapedo':
+                    html = self.get_site_content_professional(url)
+                    logger.info(f"HTML récupéré via Scrape.do")
+                    return html
+                elif method == 'requests':
+                    resp = self._http_get_with_retry(url)
+                    logger.info(f"HTML récupéré via requests")
+                    return resp.text
+                elif method == 'selenium':
+                    html = self.get_site_content_selenium(url, max_wait=max_wait)
+                    logger.info(f"HTML récupéré via Selenium")
+                    return html
+                elif method == 'playwright':
+                    html = self.get_site_content_playwright(url, max_wait=max_wait)
+                    logger.info(f"HTML récupéré via Playwright")
+                    return html
+            except Exception as e:
+                logger.warning(f"Méthode {method} échouée: {e}")
+                last_exc = e
+        logger.error(f"Toutes les méthodes de récupération HTML ont échoué pour {url}")
+        if last_exc is not None and isinstance(last_exc, BaseException):
+            raise last_exc
+        raise Exception("Impossible de récupérer le HTML")
+
     def scrape_with_scrapedo(self, url: str, params: dict = {}) -> dict:
         """Scraper avec Scrape.do"""
         try:
             if not self.config.HAS_SCRAPEDO:
                 raise Exception("Scrape.do API key non configurée")
             
-            api_url = "https://api.scrapingbee.com/api/v1/"
+            api_url = "https://api.scrape.do/"
             params.update({
-                'api_key': self.config.SCRAPEDO_API_KEY,
-                'url': url,
-                'render_js': 'false',
-                'premium_proxy': 'true',
-                'country_code': 'fr'
+                'token': self.config.SCRAPEDO_API_KEY,
+                'url': url
+                # Ajouter d'autres paramètres scrape.do ici si besoin (super, geoCode, etc.)
             })
-            
             response = requests.get(api_url, params=params, timeout=30)
             response.raise_for_status()
-            
             return {
                 'success': True,
                 'html': response.text,
                 'status_code': response.status_code
             }
-            
         except Exception as e:
             logger.error(f"Erreur Scrape.do: {e}")
             return {
@@ -75,7 +144,6 @@ class ScrapingService:
             raise
     
     def get_site_content_selenium(self, url: str, max_wait: int = 10) -> str:
-        """Récupérer le contenu d'un site avec Selenium"""
         try:
             chrome_options = Options()
             chrome_options.add_argument("--headless")
@@ -83,16 +151,17 @@ class ScrapingService:
             chrome_options.add_argument("--disable-dev-shm-usage")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--window-size=1920,1080")
-            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-            
+            chrome_options.add_argument(f"--user-agent={self._get_random_user_agent()}")
+            # Proxy support (si self.proxies)
+            if self.proxies and 'http' in self.proxies:
+                chrome_options.add_argument(f"--proxy-server={self.proxies['http']}")
             driver = webdriver.Chrome(options=chrome_options)
             driver.set_page_load_timeout(max_wait)
             driver.get(url)
-            time.sleep(2)  # Attendre le chargement
+            time.sleep(2)
             html = driver.page_source
             driver.quit()
             return html
-            
         except Exception as e:
             logger.error(f"Erreur Selenium: {e}")
             if 'driver' in locals():
@@ -100,17 +169,19 @@ class ScrapingService:
             raise
     
     def get_site_content_playwright(self, url: str, max_wait: int = 10) -> str:
-        """Récupérer le contenu d'un site avec Playwright"""
         try:
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
+                context = browser.new_context(user_agent=self._get_random_user_agent())
+                # Proxy support (si self.proxies)
+                if self.proxies and 'http' in self.proxies:
+                    context = browser.new_context(user_agent=self._get_random_user_agent(), proxy={"server": self.proxies['http']})
+                page = context.new_page()
                 page.set_default_timeout(max_wait * 1000)
                 page.goto(url, wait_until='networkidle')
                 html = page.content()
                 browser.close()
                 return html
-                
         except Exception as e:
             logger.error(f"Erreur Playwright: {e}")
             raise
@@ -306,37 +377,16 @@ class ScrapingService:
             # Boucle de pagination (max 5 pages)
             for page_num in range(5):
                 html = ""
-                # Pipeline de fallback
                 try:
-                    html = self.get_site_content_professional(url_to_scrape)
-                    method_used = 'scrapedo'
-                except Exception as e1:
-                    logger.warning(f"Scrape.do échoué: {e1}")
-                    try:
-                        response = requests.get(url_to_scrape, timeout=10, headers={
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        })
-                        response.raise_for_status()
-                        html = response.text
-                        method_used = 'requests'
-                    except Exception as e2:
-                        logger.warning(f"Requests fallback échoué: {e2}")
-                        try:
-                            html = self.get_site_content_selenium(url_to_scrape)
-                            method_used = 'selenium'
-                        except Exception as e3:
-                            logger.warning(f"Selenium fallback échoué: {e3}")
-                            try:
-                                html = self.get_site_content_playwright(url_to_scrape)
-                                method_used = 'playwright'
-                            except Exception as e4:
-                                logger.error(f"Playwright fallback échoué: {e4}")
-                                feedback = f"Impossible de récupérer le contenu du site: {e4}"
-                                html = ""
-                
+                    # Utilisation de la méthode centralisée
+                    html = self.get_html(url_to_scrape, method_order=[method, 'requests', 'selenium', 'playwright'])
+                    method_used = method
+                except Exception as e:
+                    logger.warning(f"Toutes les méthodes de récupération HTML ont échoué: {e}")
+                    feedback = f"Impossible de récupérer le contenu du site: {e}"
+                    html = ""
                 if not html:
                     break
-                
                 html_pages.append(html)
                 
                 try:
@@ -607,16 +657,91 @@ Ta mission : extraire tous les articles (titre, url, date, contenu principal) et
             }
     
     def log_scraping_history(self, user_id, url, method, articles_count, status):
-        """Logger l'historique de scraping"""
+        """Enregistrer l'historique de scraping"""
         try:
             query = """
-                INSERT INTO scraping_history (user_id, url, method, articles_count, status, created_at)
+                INSERT INTO scraping_history (user_id, url, method, articles_count, status, timestamp)
                 VALUES (%s, %s, %s, %s, %s, NOW())
             """
-            self.db.execute_update(query, (user_id, url, method, articles_count, status))
-            logger.info(f"Historique de scraping enregistré: {user_id} - {url} - {method} - {articles_count} articles")
+            self.db.execute_query(query, (user_id, url, method, articles_count, status))
         except Exception as e:
             logger.error(f"Erreur lors de l'enregistrement de l'historique: {e}")
+    
+    def get_user_usage_stats(self, username):
+        """Récupérer les statistiques d'utilisation d'un utilisateur"""
+        try:
+            # Récupérer l'ID de l'utilisateur
+            user_query = "SELECT id FROM users WHERE username = %s"
+            user_result = self.db.execute_query(user_query, (username,))
+            if not user_result:
+                return {}
+            
+            user_id = user_result[0]['id']
+            
+            # Statistiques générales
+            stats_query = """
+                SELECT 
+                    COUNT(*) as total_requests,
+                    SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) as successful_requests,
+                    SUM(articles_count) as total_articles,
+                    MIN(created_at) as first_request,
+                    MAX(created_at) as last_request
+                FROM scraping_history 
+                WHERE user_id = %s
+            """
+            stats_result = self.db.execute_query(stats_query, (user_id,))
+            general_stats = stats_result[0] if stats_result else {}
+            
+            # Domaines les plus utilisés
+            domains_query = """
+                SELECT 
+                    SUBSTRING_INDEX(SUBSTRING_INDEX(url, '/', 3), '://', -1) as domain,
+                    COUNT(*) as count
+                FROM scraping_history 
+                WHERE user_id = %s
+                GROUP BY domain
+                ORDER BY count DESC
+                LIMIT 10
+            """
+            domains_result = self.db.execute_query(domains_query, (user_id,))
+            
+            # Méthodes utilisées
+            methods_query = """
+                SELECT 
+                    method,
+                    COUNT(*) as count
+                FROM scraping_history 
+                WHERE user_id = %s
+                GROUP BY method
+                ORDER BY count DESC
+            """
+            methods_result = self.db.execute_query(methods_query, (user_id,))
+            
+            # Historique récent (dernières 10 requêtes)
+            recent_query = """
+                SELECT 
+                    url,
+                    method,
+                    articles_count,
+                    status,
+                    created_at
+                FROM scraping_history 
+                WHERE user_id = %s
+                ORDER BY created_at DESC
+                LIMIT 10
+            """
+            recent_result = self.db.execute_query(recent_query, (user_id,))
+            
+            return {
+                'general_stats': general_stats,
+                'top_domains': domains_result,
+                'methods_used': methods_result,
+                'recent_requests': recent_result
+            }
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des statistiques: {e}")
+            return {}
 
 # Instance globale
 scraping_service = ScrapingService() 

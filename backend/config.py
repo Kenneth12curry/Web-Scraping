@@ -48,7 +48,15 @@ class Config:
         'collation': 'utf8mb4_unicode_ci',
         'autocommit': True,
         'pool_name': 'mypool',
-        'pool_size': 5
+        'pool_size': 10,
+        'pool_reset_session': True,
+        'connect_timeout': 60,
+        'read_timeout': 30,
+        'write_timeout': 30,
+        'use_unicode': True,
+        'get_warnings': True,
+        'raise_on_warnings': False,
+        'connection_timeout': 60
     }
     
     # Configuration Redis
@@ -90,6 +98,9 @@ class Config:
     
     # Configuration Monitoring
     PROMETHEUS_ENABLED = True
+    
+    # Configuration User-Agent pour le scraping
+    USER_AGENT = os.getenv('USER_AGENT', 'Mozilla/5.0 (compatible; FindataBot/1.0; +https://findata.local/bot)')
     
     @classmethod
     def validate_config(cls):

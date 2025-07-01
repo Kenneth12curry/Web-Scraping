@@ -14,6 +14,7 @@ import time
 from services.scraping_service import scraping_service
 from services.subscription_service import subscription_service
 from config import Config
+from database.mysql_connector import mysql_connector
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +61,15 @@ def scraping_routes(app):
                     'message': f"Erreur lors du scraping: {result.get('error', 'Erreur inconnue')}"
                 }), 500
             
-            # Logger le scraping
+            # Récupérer l'ID utilisateur à partir du username
+            user_query = "SELECT id FROM users WHERE username = %s"
+            user_data = mysql_connector.execute_query(user_query, (current_user,))
+            if not user_data:
+                return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
+            user_id = user_data[0]['id']
+            # Logger le scraping avec l'ID utilisateur
             scraping_service.log_scraping_history(
-                current_user, site_url, method, result['total_articles'], 'success'
+                user_id, site_url, method, result['total_articles'], 'success'
             )
             
             # Incrémenter le compteur de requêtes

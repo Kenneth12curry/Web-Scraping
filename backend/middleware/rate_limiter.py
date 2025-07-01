@@ -7,6 +7,7 @@ import logging
 from flask import request, jsonify, g
 from functools import wraps
 from datetime import datetime, timedelta
+import collections.abc
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,9 @@ class RateLimiterMiddleware:
             def decorator(f):
                 @wraps(f)
                 def decorated_function(*args, **kwargs):
+                    # Ne jamais appliquer de rate limiting sur les requêtes OPTIONS
+                    if request.method == 'OPTIONS':
+                        return f(*args, **kwargs)
                     # Obtenir l'identifiant de l'utilisateur
                     user_id = self._get_user_identifier()
                     
@@ -68,7 +72,6 @@ class RateLimiterMiddleware:
         """Vérifier si l'utilisateur respecte les limites"""
         try:
             from database.redis_connector import redis_connector
-            
             # Définir les limites selon le type
             limits = {
                 "auth": {"requests": 5, "window": 300},  # 5 req/5min pour l'auth
@@ -76,17 +79,33 @@ class RateLimiterMiddleware:
                 "api": {"requests": 100, "window": 3600},  # 100 req/h pour l'API
                 "default": {"requests": 50, "window": 3600}  # 50 req/h par défaut
             }
-            
             limit_config = limits.get(limit_type, limits["default"])
             key = f"rate_limit:{user_id}:{limit_type}"
-            
-            # Vérifier le compteur actuel
-            current_count = redis_connector.get_connection().get(key)
-            if current_count and int(current_count) >= limit_config["requests"]:
+            redis_conn = redis_connector.get_connection()
+            if redis_conn is None:
+                return True  # Pas de rate limit si pas de Redis
+            current_count = redis_conn.get(key)
+            # Redis retourne bytes, il faut décoder avant de caster en int
+            if current_count is not None:
+                if isinstance(current_count, bytes):
+                    try:
+                        current_count = int(current_count.decode())
+                    except Exception:
+                        current_count = 0
+                elif isinstance(current_count, int):
+                    pass
+                elif isinstance(current_count, str):
+                    try:
+                        current_count = int(current_count)
+                    except Exception:
+                        current_count = 0
+                elif isinstance(current_count, collections.abc.Awaitable):
+                    current_count = 0
+                else:
+                    current_count = 0
+            if current_count is not None and current_count >= limit_config["requests"]:
                 return False
-            
             return True
-            
         except Exception as e:
             logger.warning(f"Erreur lors de la vérification du rate limit: {e}")
             # En cas d'erreur, autoriser la requête
@@ -96,24 +115,21 @@ class RateLimiterMiddleware:
         """Incrémenter le compteur de requêtes"""
         try:
             from database.redis_connector import redis_connector
-            
             limits = {
                 "auth": {"requests": 5, "window": 300},
                 "scraping": {"requests": 10, "window": 60},
                 "api": {"requests": 100, "window": 3600},
                 "default": {"requests": 50, "window": 3600}
             }
-            
             limit_config = limits.get(limit_type, limits["default"])
             key = f"rate_limit:{user_id}:{limit_type}"
-            
-            # Incrémenter avec expiration
             redis_conn = redis_connector.get_connection()
+            if redis_conn is None:
+                return  # Pas d'incrément si pas de Redis
             pipe = redis_conn.pipeline()
             pipe.incr(key)
             pipe.expire(key, limit_config["window"])
             pipe.execute()
-            
         except Exception as e:
             logger.warning(f"Erreur lors de l'incrémentation du rate limit: {e}")
     
@@ -121,12 +137,14 @@ class RateLimiterMiddleware:
         """Obtenir le temps d'attente avant la prochaine requête"""
         try:
             from database.redis_connector import redis_connector
-            
             key = f"rate_limit:{user_id}:{limit_type}"
-            ttl = redis_connector.get_connection().ttl(key)
-            
+            redis_conn = redis_connector.get_connection()
+            if redis_conn is None:
+                return 60  # Fallback: 1 minute
+            ttl = redis_conn.ttl(key)
+            if ttl is None or not isinstance(ttl, int):
+                return 60
             return max(0, ttl)
-            
         except Exception:
             return 60  # Fallback: 1 minute
 

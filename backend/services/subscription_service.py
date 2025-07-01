@@ -98,7 +98,7 @@ class SubscriptionService:
                 SET monthly_requests_used = monthly_requests_used + 1
                 WHERE username = %s
             """
-            return self.db.execute_update(query, (username,))
+            return self.db.execute_query(query, (username,))
         except Exception as e:
             logger.error(f"Erreur lors de l'incrémentation de l'usage: {e}")
             return False
@@ -107,7 +107,7 @@ class SubscriptionService:
         """Réinitialiser l'usage mensuel (appelé par un cron job)"""
         try:
             query = "UPDATE users SET monthly_requests_used = 0"
-            return self.db.execute_update(query)
+            return self.db.execute_query(query)
         except Exception as e:
             logger.error(f"Erreur lors de la réinitialisation de l'usage: {e}")
             return False
@@ -133,7 +133,7 @@ class SubscriptionService:
                 WHERE username = %s
             """
             
-            if self.db.execute_update(query, (plan, requests_limit, end_date, username)):
+            if self.db.execute_query(query, (plan, requests_limit, end_date, username)):
                 logger.info(f"Abonnement mis à jour pour {username}: {plan} ({requests_limit} requêtes)")
                 return True, "Abonnement mis à jour avec succès"
             else:

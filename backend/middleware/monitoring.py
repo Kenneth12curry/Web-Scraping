@@ -10,6 +10,9 @@ from flask import request, g
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import time
+from database.mysql_connector import mysql_connector
+from flask_jwt_extended import get_jwt_identity
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +151,68 @@ def log_scraping_request(method: str, status: str):
     """Logger une requête de scraping"""
     SCRAPING_REQUESTS.labels(method=method, status=status).inc()
 
-def log_api_usage(endpoint: str, user_id: str):
-    """Logger l'utilisation de l'API"""
-    API_USAGE.labels(endpoint=endpoint, user_id=user_id).inc() 
+def log_api_usage(response):
+    """Enregistrer l'utilisation de l'API"""
+    try:
+        # Ignorer les routes de monitoring, de santé, et les requêtes OPTIONS
+        if request.method == 'OPTIONS' or request.endpoint in ['health', 'metrics', 'static']:
+            return response
+        
+        # Récupérer l'utilisateur si connecté
+        user_id = None
+        try:
+            current_user = get_jwt_identity()
+            if current_user:
+                # Récupérer l'ID utilisateur
+                user_query = "SELECT id FROM users WHERE username = %s"
+                user_data = mysql_connector.execute_query(user_query, (current_user,))
+                if user_data:
+                    user_id = user_data[0]['id']
+        except Exception:
+            pass  # Utilisateur non connecté
+        # Ne rien enregistrer si pas d'utilisateur authentifié
+        if not user_id:
+            return response
+        
+        # Extraire le domaine de l'URL si c'est une requête de scraping
+        domain = None
+        if request.endpoint == 'scraping.scrape_url':
+            try:
+                data = request.get_json()
+                if data and 'url' in data:
+                    from urllib.parse import urlparse
+                    parsed = urlparse(data['url'])
+                    domain = parsed.netloc
+            except Exception:
+                pass
+        
+        # Enregistrer l'utilisation
+        insert_query = """
+            INSERT INTO api_usage (user_id, endpoint, method, status_code, response_time, domain)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        
+        response_time = getattr(g, 'request_time', 0)
+        
+        mysql_connector.execute_query(insert_query, (
+            user_id,
+            request.endpoint,
+            request.method,
+            response.status_code,
+            response_time,
+            domain
+        ))
+        
+    except Exception as e:
+        logger.error(f"Erreur lors de l'enregistrement de l'utilisation API: {e}")
+    
+    return response
+
+def start_request_timer():
+    """Démarrer le timer pour mesurer le temps de réponse"""
+    g.request_time = time.time()
+
+def end_request_timer():
+    """Terminer le timer et calculer le temps de réponse"""
+    if hasattr(g, 'request_time'):
+        g.request_time = time.time() - g.request_time 

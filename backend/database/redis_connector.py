@@ -30,10 +30,10 @@ class RedisConnector:
             self.redis_client = redis.Redis(**self.config)
             # Test de connexion
             self.redis_client.ping()
-            logger.info("✅ Connexion Redis établie")
+            logger.info("Connexion Redis etablie")
         except Exception as e:
-            logger.warning(f"⚠️ Redis non disponible: {e}")
-            logger.info("Utilisation du cache en mémoire local")
+            logger.warning(f"Redis non disponible: {e}")
+            logger.info("Utilisation du cache en memoire local")
             self.redis_client = None
     
     def test_connection(self):
@@ -41,14 +41,18 @@ class RedisConnector:
         try:
             if self.redis_client:
                 self.redis_client.ping()
-                logger.info("✅ Test de connexion Redis réussi")
+                logger.info("Test de connexion Redis reussi")
                 return True
             else:
-                logger.warning("⚠️ Redis non disponible - utilisation du cache local")
+                logger.warning("Redis non disponible - utilisation du cache local")
                 return False
         except Exception as e:
-            logger.error(f"❌ Test de connexion Redis échoué: {e}")
+            logger.error(f"Test de connexion Redis echoue: {e}")
             return False
+    
+    def get_connection(self):
+        """Obtenir la connexion Redis"""
+        return self.redis_client
     
     def get_cached_data(self, key):
         """Récupérer des données du cache"""

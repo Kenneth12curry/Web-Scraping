@@ -84,15 +84,16 @@ class SecurityMiddleware:
     
     def _is_suspicious_user_agent(self, user_agent):
         """Vérifier si l'User-Agent est suspect"""
+        # En mode développement, être moins restrictif
+        if os.getenv('FLASK_ENV') == 'development':
+            return False
+            
         suspicious_patterns = [
             r'bot',
             r'crawler',
             r'spider',
             r'scanner',
-            r'nmap',
-            r'curl',
-            r'wget',
-            r'python-requests'
+            r'nmap'
         ]
         
         user_agent_lower = user_agent.lower()
