@@ -74,7 +74,7 @@ const Dashboard = () => {
     return { days, requests, success };
   };
 
-  const chartData = getChartData();
+  // const chartData = getChartData();
 
   // Ajout d'une variable pour la description des échecs
   const failedDescription = stats && stats.total_requests
@@ -234,101 +234,109 @@ const Dashboard = () => {
 
           {/* Stats Cards professionnelles */}
           {stats && activeSection === 'overview' && (
-            <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-header">
-                  <div className="stat-icon">
-                    <i className="fas fa-rocket"></i>
+            <div className="row">
+              <div className="col-lg-3 col-md-6 mb-4">
+                <div className="stat-card h-100">
+                  <div className="stat-header">
+                    <div className="stat-icon">
+                      <i className="fas fa-rocket"></i>
+                    </div>
+                    <div className="stat-trend positive">
+                      <i className="fas fa-arrow-up"></i>
+                      +12.5%
+                    </div>
                   </div>
-                  <div className="stat-trend positive">
-                    <i className="fas fa-arrow-up"></i>
-                    +12.5%
+                  <div className="stat-content">
+                    <div className="stat-number">{formatNumber(stats.total_requests || 0)}</div>
+                    <div className="stat-label">Requêtes Total</div>
+                    <div className="stat-description">
+                      {stats.weekly_history?.length > 0 ? `${stats.weekly_history[stats.weekly_history.length - 1].count} aujourd'hui` : 'Aucune donnée récente'}
+                    </div>
                   </div>
-                </div>
-                <div className="stat-content">
-                  <div className="stat-number">{formatNumber(stats.total_requests || 0)}</div>
-                  <div className="stat-label">Requêtes Total</div>
-                  <div className="stat-description">
-                    {stats.weekly_history?.length > 0 ? `${stats.weekly_history[stats.weekly_history.length - 1].count} aujourd'hui` : 'Aucune donnée récente'}
-                  </div>
-                </div>
-                <div className="stat-progress">
-                  <div className="progress">
-                    <div className="progress-bar" style={{ width: '75%' }}></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="stat-card">
-                <div className="stat-header">
-                  <div className="stat-icon success">
-                    <i className="fas fa-check-circle"></i>
-                  </div>
-                  <div className="stat-trend positive">
-                    <i className="fas fa-arrow-up"></i>
-                    +8.2%
-                  </div>
-                </div>
-                <div className="stat-content">
-                  <div className="stat-number">{formatNumber(stats.successful_requests || 0)}</div>
-                  <div className="stat-label">Succès</div>
-                  <div className="stat-description">
-                    {stats.success_rate ? `${stats.success_rate.toFixed(1)}% de réussite` : '0% de réussite'}
-                  </div>
-                </div>
-                <div className="stat-progress">
-                  <div className="progress">
-                    <div className="progress-bar bg-success" style={{ width: `${stats.success_rate || 0}%` }}></div>
+                  <div className="stat-progress">
+                    <div className="progress">
+                      <div className="progress-bar" style={{ width: '75%' }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card">
-                <div className="stat-header">
-                  <div className="stat-icon warning">
-                    <i className="fas fa-exclamation-triangle"></i>
+              <div className="col-lg-3 col-md-6 mb-4">
+                <div className="stat-card h-100">
+                  <div className="stat-header">
+                    <div className="stat-icon success">
+                      <i className="fas fa-check-circle"></i>
+                    </div>
+                    <div className="stat-trend positive">
+                      <i className="fas fa-arrow-up"></i>
+                      +8.2%
+                    </div>
                   </div>
-                  <div className="stat-trend negative">
-                    <i className="fas fa-arrow-down"></i>
-                    -5.1%
+                  <div className="stat-content">
+                    <div className="stat-number">{formatNumber(stats.successful_requests || 0)}</div>
+                    <div className="stat-label">Succès</div>
+                    <div className="stat-description">
+                      {stats.success_rate ? `${stats.success_rate.toFixed(1)}% de réussite` : '0% de réussite'}
+                    </div>
                   </div>
-                </div>
-                <div className="stat-content">
-                  <div className="stat-number">{formatNumber(stats.failed_requests || 0)}</div>
-                  <div className="stat-label">Échecs</div>
-                  <div className="stat-description">
-                    {failedDescription}
-                  </div>
-                </div>
-                <div className="stat-progress">
-                  <div className="progress">
-                    <div className="progress-bar bg-warning" style={{ width: `${Math.min((stats.failed_requests || 0) / Math.max(stats.total_requests || 1, 1) * 100, 100)}%` }}></div>
+                  <div className="stat-progress">
+                    <div className="progress">
+                      <div className="progress-bar bg-success" style={{ width: `${stats.success_rate || 0}%` }}></div>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div className="stat-card">
-                <div className="stat-header">
-                  <div className="stat-icon info">
-                    <i className="fas fa-tachometer-alt"></i>
+              <div className="col-lg-3 col-md-6 mb-4">
+                <div className="stat-card h-100">
+                  <div className="stat-header">
+                    <div className="stat-icon warning">
+                      <i className="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div className="stat-trend negative">
+                      <i className="fas fa-arrow-down"></i>
+                      -5.1%
+                    </div>
                   </div>
-                  <div className="stat-trend positive">
-                    <i className="fas fa-arrow-up"></i>
-                    +15.3%
+                  <div className="stat-content">
+                    <div className="stat-number">{formatNumber(stats.failed_requests || 0)}</div>
+                    <div className="stat-label">Échecs</div>
+                    <div className="stat-description">
+                      {failedDescription}
+                    </div>
+                  </div>
+                  <div className="stat-progress">
+                    <div className="progress">
+                      <div className="progress-bar bg-warning" style={{ width: `${Math.min((stats.failed_requests || 0) / Math.max(stats.total_requests || 1, 1) * 100, 100)}%` }}></div>
+                    </div>
                   </div>
                 </div>
-                <div className="stat-content">
-                  <div className="stat-number">{(stats.success_rate || 0).toFixed(1)}%</div>
-                  <div className="stat-label">Performance</div>
-                  <div className="stat-description">
-                    {stats.total_requests
-                      ? `${stats.successful_requests || 0}/${stats.total_requests} requêtes`
-                      : '0/0 requêtes'}
+              </div>
+
+              <div className="col-lg-3 col-md-6 mb-4">
+                <div className="stat-card h-100">
+                  <div className="stat-header">
+                    <div className="stat-icon info">
+                      <i className="fas fa-tachometer-alt"></i>
+                    </div>
+                    <div className="stat-trend positive">
+                      <i className="fas fa-arrow-up"></i>
+                      +15.3%
+                    </div>
                   </div>
-                </div>
-                <div className="stat-progress">
-                  <div className="progress">
-                    <div className="progress-bar bg-info" style={{ width: `${(stats.success_rate || 0) * 100}%` }}></div>
+                  <div className="stat-content">
+                    <div className="stat-number">{(stats.success_rate || 0).toFixed(1)}%</div>
+                    <div className="stat-label">Performance</div>
+                    <div className="stat-description">
+                      {stats.total_requests
+                        ? `${stats.successful_requests || 0}/${stats.total_requests} requêtes`
+                        : '0/0 requêtes'}
+                    </div>
+                  </div>
+                  <div className="stat-progress">
+                    <div className="progress">
+                      <div className="progress-bar bg-info" style={{ width: `${(stats.success_rate || 0) * 100}%` }}></div>
+                    </div>
                   </div>
                 </div>
               </div>

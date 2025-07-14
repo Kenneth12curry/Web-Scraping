@@ -36,10 +36,10 @@ const Analytics = () => {
     return num.toString();
   };
 
-  const formatPercentage = (value, total) => {
+  /* const formatPercentage = (value, total) => {
     if (!total) return '0%';
     return ((value / total) * 100).toFixed(1) + '%';
-  };
+  }; */
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);

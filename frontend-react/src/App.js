@@ -45,7 +45,6 @@ const ProtectedRoute = ({ children }) => {
       const user = localStorage.getItem('user');
       
       if (token && user) {
-        // Vérifier la validité du token (optionnel)
         setIsAuthenticated(true);
       } else {
         setIsAuthenticated(false);
@@ -55,7 +54,6 @@ const ProtectedRoute = ({ children }) => {
 
     checkAuth();
     
-    // Écouter les changements d'authentification
     const handleAuthChange = () => {
       const token = localStorage.getItem('token');
       const user = localStorage.getItem('user');
@@ -86,7 +84,6 @@ const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Simuler un temps de chargement initial
     const timer = setTimeout(() => {
       const token = localStorage.getItem('token');
       const user = localStorage.getItem('user');
@@ -97,7 +94,6 @@ const App = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Écouter les changements d'authentification
   useEffect(() => {
     const handleStorageChange = () => {
       const token = localStorage.getItem('token');
@@ -105,10 +101,8 @@ const App = () => {
       setIsAuthenticated(!!(token && user));
     };
 
-    // Écouter les changements de localStorage
     window.addEventListener('storage', handleStorageChange);
     
-    // Écouter les changements personnalisés
     const handleAuthChange = () => {
       const token = localStorage.getItem('token');
       const user = localStorage.getItem('user');
@@ -131,106 +125,38 @@ const App = () => {
     <Router>
       <div className="App">
         <Routes>
-          {/* Route publique - Page d'accueil */}
           <Route 
-            path="/" 
-            element={
-              isAuthenticated ? (
-                <>
-                  <Navigation />
-                  <Home />
-                </>
-              ) : (
-                <Home />
-              )
-            } 
+            path="/"
+            element={isAuthenticated ? <><Navigation /><Home /></> : <Home />}
           />
-          
-          {/* Routes publiques */}
           <Route 
-            path="/login" 
-            element={
-              isAuthenticated ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <Login />
-              )
-            } 
+            path="/login"
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />}
           />
-          
           <Route 
-            path="/register" 
-            element={
-              isAuthenticated ? (
-                <Navigate to="/dashboard" replace />
-              ) : (
-                <Register />
-              )
-            } 
+            path="/register"
+            element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />}
           />
-          
-          {/* Routes protégées avec Navigation */}
           <Route
             path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Navigation />
-                  <Dashboard />
-                </>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Navigation /><Dashboard /></ProtectedRoute>}
           />
-          
           <Route
             path="/scraping"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Navigation />
-                  <Scraping />
-                </>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Scraping /></ProtectedRoute>}
           />
-          
           <Route
             path="/analytics"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Navigation />
-                  <Analytics />
-                </>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Navigation /><Analytics /></ProtectedRoute>}
           />
-          
           <Route
             path="/documentation"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Navigation />
-                  <Documentation />
-                </>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Navigation /><Documentation /></ProtectedRoute>}
           />
-          
           <Route
             path="/account"
-            element={
-              <ProtectedRoute>
-                <>
-                  <Navigation />
-                  <Account />
-                </>
-              </ProtectedRoute>
-            }
+            element={<ProtectedRoute><Navigation /><Account /></ProtectedRoute>}
           />
-          
-          {/* Route 404 */}
           <Route
             path="*"
             element={
@@ -258,4 +184,4 @@ const App = () => {
   );
 };
 
-export default App; 
+export default App;

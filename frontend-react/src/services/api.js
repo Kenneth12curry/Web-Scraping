@@ -107,7 +107,10 @@ export const authService = {
       api.post('/auth/register', {
         username: userData.username,
         password: userData.password,
-        email: userData.email
+        email: userData.email,
+        first_name: userData.firstName,
+        last_name: userData.lastName,
+        company: userData.company
       })
     );
   },

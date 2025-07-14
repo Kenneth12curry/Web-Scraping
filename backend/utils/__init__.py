@@ -2,4 +2,4 @@
 Package utils - Fonctions utilitaires
 """
 
-# Utils module initialization 
+# Utils module initialization

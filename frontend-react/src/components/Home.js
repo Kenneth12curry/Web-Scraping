@@ -5,6 +5,7 @@ import './Home.css';
 const Home = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentFeature, setCurrentFeature] = useState(0);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const features = [
     {
@@ -151,7 +152,31 @@ const Home = () => {
               </>
             )}
           </div>
+          <button className="navbar-toggle" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+            <i className={`fas ${isMenuOpen ? 'fa-times' : 'fa-bars'}`}></i>
+          </button>
         </div>
+        {isMenuOpen && (
+          <div className="navbar-links-mobile">
+            {isAuthenticated ? (
+              <Link to="/dashboard" className="btn btn-primary btn-sm me-2">
+                <i className="fas fa-tachometer-alt me-2"></i>
+                Dashboard
+              </Link>
+            ) : (
+              <>
+                <Link to="/login" className="btn btn-outline-primary btn-sm me-2">
+                  <i className="fas fa-sign-in-alt me-2"></i>
+                  Se connecter
+                </Link>
+                <Link to="/register" className="btn btn-primary btn-sm">
+                  <i className="fas fa-user-plus me-2"></i>
+                  S'inscrire
+                </Link>
+              </>
+            )}
+          </div>
+        )}
       </nav>
       {/* Hero Section */}
       <section className={`hero-section ${isAuthenticated ? 'with-navbar' : ''}`}>
@@ -174,7 +199,7 @@ const Home = () => {
                 <h1 className="hero-title">
                   <span className="gradient-text">FinData IA-M.K</span>
                   <br />
-                  <span className="hero-slogan">Votre partenaire d'excellence pour l'analyse et la valorisation des données financières</span>
+                  <span className="hero-slogan"></span>
                 </h1>
                 <p className="hero-subtitle">
                   Plateforme professionnelle tout-en-un : extraction intelligente, analyse avancée, visualisation claire et conformité totale. 
@@ -204,17 +229,13 @@ const Home = () => {
                   )}
                 </div>
                 <div className="hero-stats mt-4">
-                  <div className="row">
-                    {stats.map((stat, index) => (
-                      <div key={index} className="col-6 col-md-3">
-                        <div className="stat-item">
-                          <i className={`${stat.icon} text-${stat.color}`}></i>
-                          <div className="stat-number">{stat.number}</div>
-                          <div className="stat-label">{stat.label}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {stats.map((stat, index) => (
+                    <div key={index} className="stat-item">
+                      <i className={`${stat.icon} text-${stat.color}`}></i>
+                      <div className="stat-number">{stat.number}</div>
+                      <div className="stat-label">{stat.label}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -656,7 +677,7 @@ const Home = () => {
                 <Link to="/register">Inscription</Link>
               </div>
               <p className="mt-2">
-                © 2024 FinData IA-M.K. Tous droits réservés.
+                © 2025 FinData IA-M.K. Tous droits réservés.
               </p>
             </div>
           </div>

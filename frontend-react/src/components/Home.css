@@ -111,17 +111,20 @@ body {
 
 /* ===== NAVBAR PROFESSIONNELLE ===== */
 .home-navbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  background: rgba(30, 41, 59, 0.95);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--border-color);
-  padding: var(--spacing-md) 0;
-  transition: all var(--transition-normal);
+  padding: var(--spacing-sm) 0; /* Réduction du padding */
+}
+
+.testimonials-section .row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--spacing-lg);
+  overflow-x: auto;
+  padding-bottom: var(--spacing-lg);
+}
+
+.testimonials-section .col-lg-4 {
+  min-width: 300px; /* Assure une largeur minimale pour chaque carte */
 }
 
 .navbar-content {
@@ -782,9 +785,56 @@ body {
 /* ===== SECTION TÉMOIGNAGES ===== */
 .testimonial-rating {
   display: flex;
+  flex-direction: row; /* Assure l'alignement horizontal */
+  justify-content: center; /* Centre les étoiles horizontalement */
   align-items: center;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-md);
+}
+
+/* Styles pour le menu hamburger */
+.navbar-toggle {
+  display: none; /* Caché par défaut sur desktop */
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.navbar-links-mobile {
+    display: none; /* Caché par défaut */
+}
+
+@media (max-width: 768px) {
+  .navbar-actions {
+    display: none; /* Cache les actions sur les grands écrans */
+  }
+
+  .navbar-toggle {
+    display: block; /* Affiche le bouton hamburger */
+  }
+
+  .navbar-links-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    background: var(--bg-secondary);
+    position: absolute;
+    top: 60px; /* Hauteur de la navbar */
+    left: 0;
+    right: 0;
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .pricing-card.featured {
+    transform: none; /* Supprime le zoom sur mobile */
+  }
+
+  .pricing-card.featured:hover {
+    transform: translateY(-8px); /* Garde l'effet de survol */
+  }
 }
 
 .testimonial-rating .fas.fa-star {
@@ -877,7 +927,7 @@ body {
 
 .pricing-badge {
   position: absolute;
-  top: -12px;
+  top: -2px; /* Rapproche encore plus le badge du texte */
   left: 50%;
   transform: translateX(-50%);
   padding: var(--spacing-xs) var(--spacing-lg);
@@ -888,6 +938,7 @@ body {
   border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  box-shadow: var(--shadow-md);
 }
 
 .pricing-header {
@@ -1051,18 +1102,39 @@ body {
   animation: slideInUp 0.8s ease-out both;
 }
 
-/* ===== RESPONSIVE DESIGN ===== */
+/* ===== RESPONSIVE DESIGN (AMÉLIORÉ) ===== */
+
+/* Tablettes et grands écrans (paysage) */
 @media (max-width: 1200px) {
   .hero-title {
     font-size: 3rem;
   }
-  
   .dashboard-preview {
     transform: perspective(1000px) rotateY(-3deg) rotateX(3deg);
   }
 }
 
+/* Tablettes (portrait) */
 @media (max-width: 992px) {
+  .hero-section .row {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .hero-section .col-lg-6 {
+    max-width: 100%;
+    margin-bottom: var(--spacing-xl);
+  }
+
+  .hero-subtitle {
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .hero-actions {
+    justify-content: center;
+  }
+
   .hero-title {
     font-size: 2.5rem;
   }
@@ -1072,7 +1144,7 @@ body {
   }
   
   .dashboard-preview {
-    transform: none;
+    transform: none; /* Supprime l'effet 3D */
     margin-top: var(--spacing-xl);
   }
   
@@ -1082,46 +1154,41 @@ body {
   }
 }
 
+/* Mobiles (grands) */
 @media (max-width: 768px) {
-  .hero-title {
-    font-size: 2rem;
-  }
-  
-  .hero-slogan {
-    font-size: 1.125rem;
-  }
-  
-  .hero-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
   .hero-stats {
     grid-template-columns: repeat(2, 1fr);
   }
-  
-  .section-title {
-    font-size: 2rem;
+
+  .testimonial-rating {
+    justify-content: center !important;
   }
-  
-  .cta-title {
-    font-size: 2rem;
+
+  .navbar-actions {
+    display: none;
   }
-  
-  .navbar-content {
+
+  .navbar-toggle {
+    display: block;
+  }
+
+  .navbar-links-mobile {
+    display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
-  }
-  
-  .footer-links {
-    justify-content: center;
-    margin-top: var(--spacing-md);
+    gap: var(--spacing-lg);
+    background: var(--bg-secondary);
+    position: absolute;
+    top: 60px;
+    left: 0;
+    right: 0;
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
   }
 }
 
 @media (max-width: 480px) {
   .hero-title {
-    font-size: 1.75rem;
+    font-size: 1.8rem;
   }
   
   .hero-slogan {
@@ -1142,6 +1209,7 @@ body {
   
   .cta-actions {
     flex-direction: column;
+    align-items: center; /* Centre les boutons verticalement */
   }
   
   .pricing-card.featured {
