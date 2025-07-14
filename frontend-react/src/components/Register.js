@@ -14,7 +14,7 @@ const Register = () => {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // const [success, setSuccess] = useState('');
+  const [success, setSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -56,7 +56,7 @@ const Register = () => {
     }
 
     if (!agreedToTerms) {
-      setError('Veuillez accepter les conditions d\'utilisation');
+      setError("Veuillez accepter les conditions d'utilisation");
       return false;
     }
 
@@ -67,7 +67,6 @@ const Register = () => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccess('');
 
     if (!validateForm()) {
       setLoading(false);

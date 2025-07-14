@@ -303,6 +303,7 @@ const Dashboard = () => {
                     <div className="stat-label">Échecs</div>
                     <div className="stat-description">
                       {failedDescription}
+                    }
                     </div>
                   </div>
                   <div className="stat-progress">
@@ -340,6 +341,28 @@ const Dashboard = () => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Section Analytics */}
+          {activeSection === 'analytics' && analytics && (
+            <div className="analytics-section">
+              <h2>Statistiques d'utilisation</h2>
+              <p>Total des requêtes: {analytics.total_requests}</p>
+              <p>Requêtes réussies: {analytics.successful_requests}</p>
+              <p>Requêtes échouées: {analytics.failed_requests}</p>
+              <h3>Historique des requêtes récentes:</h3>
+              <ul>
+                {analytics.recent_requests && analytics.recent_requests.map((req, index) => (
+                  <li key={index}>
+                    {req.timestamp}: <span className={`status-${getStatusColor(req.status)}`}>{req.status}</span> - {req.details}
+                  </li>
+                ))}
+              </ul>
+              <h3>Données de graphique (simulées):</h3>
+              <p>Jours: {getChartData().days.join(', ')}</p>
+              <p>Requêtes: {getChartData().requests.join(', ')}</p>
+              <p>Succès: {getChartData().success.join(', ')}</p>
             </div>
           )}
         </div>

@@ -292,9 +292,20 @@ const Scraping = () => {
                     <div className="progress-bar">
                       <div 
                         className="progress-fill" 
-                        style={{ width: `${progress}%` }}
-                      ></div>
+                        style={{ width: `${progress}%` }}></div>
                     </div>
+                  </div>
+                )}
+                {error && (
+                  <div className="alert alert-danger" role="alert">
+                    <i className="fas fa-exclamation-triangle me-2"></i>
+                    {error}
+                  </div>
+                )}
+                {success && (
+                  <div className="alert alert-success" role="alert">
+                    <i className="fas fa-check-circle me-2"></i>
+                    {success}
                   </div>
                 )}
                 <button
