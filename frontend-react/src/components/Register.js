@@ -147,7 +147,7 @@ const Register = () => {
                   <div className="success-content">
                     <div className="success-title">🎉 Inscription réussie !</div>
                     <div className="success-description">
-                      Votre compte a été créé avec succès. Vous allez être redirigé vers la page de connexion dans quelques secondes...
+                      {success}
                     </div>
                     <button 
                       className="btn btn-primary mt-3"
