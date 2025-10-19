@@ -421,8 +421,11 @@ class ScrapingService:
     ):
         """Logique complète d'extraction d'articles avec fallback et IA"""
         try:
-            if not site_url.startswith(("http://", "https://")):
-                site_url = "https://" + site_url
+            # Nettoyer l'URL au début du processus de scraping
+            site_url = site_url.strip()
+            # Supprimer les préfixes multiples et s'assurer d'un seul préfixe valide
+            site_url = re.sub(r'^(https?://)+', '', site_url)
+            site_url = "https://" + site_url
 
             try:
                 domain = urlparse(site_url).netloc

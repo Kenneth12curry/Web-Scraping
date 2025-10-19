@@ -58,7 +58,7 @@ const Login = () => {
 
   return (
     <div className="auth-container">
-      <div className="auth-split-left">
+      <div className="auth-split-left" style={{ background: 'linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%)' }}>
         <div className="brand-logo">
           <i className="fas fa-chart-line"></i>
         </div>

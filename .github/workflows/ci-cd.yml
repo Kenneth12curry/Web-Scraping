@@ -189,6 +189,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Extract metadata for database
+        id: meta_database
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/database
+          tags: |
+            latest
+
+      - name: Build and push database image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./database
+          push: true
+          tags: ${{ steps.meta_database.outputs.tags }}
+          labels: ${{ steps.meta_database.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   # ------------------- PRODUCTION DEPLOYMENT -------------------
   deploy:
     runs-on: ubuntu-latest

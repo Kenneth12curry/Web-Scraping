@@ -8,9 +8,14 @@ const Analytics = () => {
   const [selectedPeriod, setSelectedPeriod] = useState('week');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [localScrapingHistory, setLocalScrapingHistory] = useState([]);
 
   useEffect(() => {
     fetchAnalytics();
+    const history = localStorage.getItem('scrapingHistory');
+    if (history) {
+      setLocalScrapingHistory(JSON.parse(history));
+    }
   }, [selectedPeriod]);
 
   const fetchAnalytics = async () => {
@@ -75,12 +80,12 @@ const Analytics = () => {
   const chartData = getChartData();
 
   // Filtrer l'historique selon le filtre sélectionné
-  const filteredHistory = analytics?.scraping_history?.filter(item => {
+  const filteredHistory = [...localScrapingHistory, ...(analytics?.scraping_history || [])].filter(item => {
     if (selectedFilter === 'all') return true;
-    if (selectedFilter === 'success') return item.status === 'success';
-    if (selectedFilter === 'error') return item.status !== 'success';
+    if (selectedFilter === 'success') return item.status === 'success' || item.articlesWithSummaries > 0; // Assuming articlesWithSummaries > 0 means success for local history
+    if (selectedFilter === 'error') return item.status !== 'success' && item.articlesWithSummaries === 0; // Assuming articlesWithSummaries === 0 means error for local history
     return true;
-  }) || [];
+  }).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by timestamp descending
 
   if (loading) {
     return (
@@ -499,19 +504,19 @@ const Analytics = () => {
                   className={`filter-btn ${selectedFilter === 'all' ? 'active' : ''}`}
                   onClick={() => setSelectedFilter('all')}
                 >
-                  Tous ({analytics?.scraping_history?.length || 0})
+                  Tous ({[...localScrapingHistory, ...(analytics?.scraping_history || [])].length})
                 </button>
                 <button 
                   className={`filter-btn ${selectedFilter === 'success' ? 'active' : ''}`}
                   onClick={() => setSelectedFilter('success')}
                 >
-                  Succès ({analytics?.scraping_history?.filter(item => item.status === 'success').length || 0})
+                  Succès ({[...localScrapingHistory, ...(analytics?.scraping_history || [])].filter(item => item.status === 'success' || item.articlesWithSummaries > 0).length})
                 </button>
                 <button 
                   className={`filter-btn ${selectedFilter === 'error' ? 'active' : ''}`}
                   onClick={() => setSelectedFilter('error')}
                 >
-                  Erreurs ({analytics?.scraping_history?.filter(item => item.status !== 'success').length || 0})
+                  Erreurs ({[...localScrapingHistory, ...(analytics?.scraping_history || [])].filter(item => !(item.status === 'success' || item.articlesWithSummaries > 0)).length})
                 </button>
               </div>
             </div>
@@ -520,10 +525,10 @@ const Analytics = () => {
             {filteredHistory.slice(0, 15).map((item, index) => (
               <div key={index} className="history-item">
                 <div className="history-icon">
-                  <i className={`fas fa-${item.status === 'success' ? 'check' : 'times'}`}></i>
+                  <i className={`fas fa-${item.status === 'success' || item.articlesWithSummaries > 0 ? 'check' : 'times'}`}></i>
                 </div>
                 <div className="history-content">
-                  <div className="history-title">{item.url}</div>
+                  <div className="history-title">{item.url || item.domain}</div>
                   <div className="history-meta">
                     <span className="history-method">
                       <i className="fas fa-cog me-1"></i>
@@ -531,7 +536,7 @@ const Analytics = () => {
                     </span>
                     <span className="history-articles">
                       <i className="fas fa-file-alt me-1"></i>
-                      {item.articles_count} articles
+                      {item.articlesCount || item.articles_count} articles
                     </span>
                     <span className="history-time">
                       <i className="fas fa-clock me-1"></i>
@@ -540,8 +545,8 @@ const Analytics = () => {
                   </div>
                 </div>
                 <div className="history-status">
-                  <span className={`badge bg-${item.status === 'success' ? 'success' : 'danger'}`}>
-                    {item.status === 'success' ? 'Succès' : 'Erreur'}
+                  <span className={`badge bg-${item.status === 'success' || item.articlesWithSummaries > 0 ? 'success' : 'danger'}`}>
+                    {item.status === 'success' || item.articlesWithSummaries > 0 ? 'Succès' : 'Erreur'}
                   </span>
                 </div>
               </div>

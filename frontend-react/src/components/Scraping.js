@@ -216,7 +216,7 @@ const Scraping = () => {
                     id="url"
                     className="form-input"
                     value={url}
-                    onChange={(e) => setUrl(e.target.value)}
+                    onChange={(e) => setUrl(e.target.value.trim())}
                     placeholder="https://example.com"
                     required
                     disabled={loading}
@@ -378,7 +378,7 @@ const Scraping = () => {
           Voici les données extraites pour : <strong>{results.domain}</strong>
         </div>
       </div>
-      <main className="scraping-results-container">
+      <main className="scraping-results-container scraping-main-2col scraping-results-full-width">
         <div className="scraping-card scraping-results-card">
           <div className="results-summary">
             <div className="summary-item"><span>Articles extraits</span><b>{results.total_articles}</b></div>

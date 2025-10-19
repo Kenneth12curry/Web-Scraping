@@ -148,7 +148,8 @@ def create_app():
         # Routes de santé
         from routes.health_routes import health_bp
 
-        app.register_blueprint(health_bp, url_prefix="/api")
+        app.register_blueprint(health_bp, url_prefix="/")
+        limiter.exempt(health_bp)
 
         # Routes de scraping (fonction spéciale)
         import routes.scraping_routes

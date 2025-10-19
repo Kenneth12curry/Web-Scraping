@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   db:
-    image: mysql:8.0
+    build: ./database
     command: --default-authentication-plugin=mysql_native_password
     restart: always
     environment:
@@ -12,6 +12,10 @@ services:
       - '3306:3306'
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
 
   backend:
     build: ./backend
@@ -20,7 +24,8 @@ services:
     volumes:
       - ./backend/logs:/app/logs
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       FLASK_ENV: development
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
@@ -41,13 +46,19 @@ services:
       REDIS_HOST: redis # Utiliser le nom du service Docker pour la connexion
       REDIS_PORT: 6379
       REDIS_DB: 0
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   frontend:
     build: ./frontend-react
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   redis:
     image: redis:latest

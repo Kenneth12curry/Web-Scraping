@@ -182,9 +182,9 @@ const Home = () => {
       <section className={`hero-section ${isAuthenticated ? 'with-navbar' : ''}`}>
         <div className="hero-background">
           <div className="hero-shapes">
-            <div className="shape shape-1"></div>
-            <div className="shape shape-2"></div>
-            <div className="shape shape-3"></div>
+            <div className="shape shape-1" style={{ background: 'linear-gradient(45deg, var(--primary-color), var(--info-color))' }}></div>
+            <div className="shape shape-2" style={{ background: 'linear-gradient(45deg, var(--success-color), var(--warning-color))' }}></div>
+            <div className="shape shape-3" style={{ background: 'linear-gradient(45deg, var(--danger-color), var(--secondary-color))' }}></div>
           </div>
         </div>
         
@@ -230,7 +230,7 @@ const Home = () => {
                 </div>
                 <div className="hero-stats mt-4">
                   {stats.map((stat, index) => (
-                    <div key={index} className="stat-item">
+                    <div key={index} className="stat-item" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
                       <i className={`${stat.icon} text-${stat.color}`}></i>
                       <div className="stat-number">{stat.number}</div>
                       <div className="stat-label">{stat.label}</div>
@@ -327,7 +327,7 @@ const Home = () => {
                   {feature.highlight && (
                     <div className="feature-badge">{feature.highlight}</div>
                   )}
-                  <div className={`feature-icon bg-${feature.color}`}>
+                  <div className={`feature-icon`} style={{ background: `var(--gradient-${feature.color})` }}>
                     <i className={feature.icon}></i>
                   </div>
                   <h3 className="feature-title">{feature.title}</h3>
@@ -356,7 +356,7 @@ const Home = () => {
                 </p>
                 
                 <div className="demo-features">
-                  <div className="demo-feature">
+                  <div className="demo-feature" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                     <div className="feature-icon-small">
                       <i className="fas fa-shield-alt text-success"></i>
                     </div>
@@ -366,7 +366,7 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <div className="demo-feature">
+                  <div className="demo-feature" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                     <div className="feature-icon-small">
                       <i className="fas fa-brain text-info"></i>
                     </div>
@@ -376,7 +376,7 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <div className="demo-feature">
+                  <div className="demo-feature" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                     <div className="feature-icon-small">
                       <i className="fas fa-chart-line text-warning"></i>
                     </div>
@@ -386,7 +386,7 @@ const Home = () => {
                     </div>
                   </div>
                   
-                  <div className="demo-feature">
+                  <div className="demo-feature" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                     <div className="feature-icon-small">
                       <i className="fas fa-download text-primary"></i>
                     </div>
@@ -484,7 +484,7 @@ const Home = () => {
           <div className="row">
             {testimonials.map((testimonial, index) => (
               <div key={index} className="col-lg-4 mb-4">
-                <div className="testimonial-card animate-slide-in-up" style={{ animationDelay: `${index * 0.2}s` }}>
+                <div className="testimonial-card animate-slide-in-up" style={{ animationDelay: `${index * 0.2}s`, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                   <div className="testimonial-rating">
                     {[...Array(testimonial.rating)].map((_, i) => (
                       <i key={i} className="fas fa-star text-warning"></i>
@@ -532,7 +532,7 @@ const Home = () => {
           
           <div className="row justify-content-center">
             <div className="col-lg-4 col-md-6 mb-4">
-              <div className="pricing-card">
+              <div className="pricing-card" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                 <div className="pricing-header">
                   <h3 className="pricing-title">Essai Gratuit</h3>
                   <div className="pricing-price">
@@ -573,7 +573,7 @@ const Home = () => {
             </div>
             
             <div className="col-lg-4 col-md-6 mb-4">
-              <div className="pricing-card featured">
+              <div className="pricing-card featured" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
                 <div className="pricing-badge">Recommandé</div>
                 <div className="pricing-header">
                   <h3 className="pricing-title">Plan Pro</h3>
