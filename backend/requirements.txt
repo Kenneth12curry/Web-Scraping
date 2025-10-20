@@ -21,3 +21,4 @@ langchain_community
 readability-lxml
 playwright
 langchain_groq
+pymysql
