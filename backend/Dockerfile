@@ -7,8 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     FLASK_APP=app.py     FL
 # Créer et définir le répertoire de travail
 WORKDIR /app
 
-# Installer les dépendances système
-RUN apt-get update && apt-get install -y     gcc     g++     curl     fonts-liberation     libappindicator3-1     libasound2     libatk-bridge2.0-0     libatk1.0-0     libcairo2     libcups2     libdbus-1-3     libdrm-dev     libgbm-dev     libgconf-2-4     libgdk-pixbuf2.0-0     libglib2.0-0     libgtk-3-0     libnspr4     libnss3     libx11-6     libxcomposite1     libxcursor1     libxdamage1     libxext6     libxfixes3     libxi6     libxrandr2     libxrender1     libxss1     libxtst6     xdg-utils     chromium-driver     && rm -rf /var/lib/apt/lists/*
+# Installer les dépendances système de base
+RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Copier les fichiers de dépendances
 COPY requirements.txt .
@@ -17,8 +17,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Installer Playwright
-RUN python -m playwright install chromium
+# Installer les dépendances de Playwright et le navigateur
+RUN python -m playwright install --with-deps chromium
 
 # Copier le code source
 COPY . .
