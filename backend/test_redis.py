@@ -3,11 +3,16 @@ Script de test pour vérifier la connexion Redis et Flask-Limiter
 """
 
 import logging
+import os
+import sys
 import pytest
 import redis
 from flask import Flask
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+
+# Ajoute le répertoire backend au sys.path pour trouver les modules locaux
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
 
 # Importer la configuration depuis le backend
 from config import Config
