@@ -14,8 +14,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up .env file
-        run: cp env.example .env
+      - name: Set up .env file for testing
+        run: |
+          echo "FLASK_ENV=development" > .env
+          echo "JWT_SECRET_KEY=test-secret-key" >> .env
+          echo "RESET_TOKEN_SECRET=test-reset-secret" >> .env
+          echo "MYSQL_HOST=db" >> .env
+          echo "MYSQL_USER=test_user" >> .env
+          echo "MYSQL_PASSWORD=test_password" >> .env
+          echo "MYSQL_DATABASE=test_db" >> .env
+          echo "MYSQL_ROOT_PASSWORD=root_password" >> .env
+          echo "REDIS_HOST=redis" >> .env
+          echo "REDIS_PORT=6379" >> .env
+          echo "REDIS_DB=0" >> .env
 
       - name: Install Docker Compose
         run: sudo apt-get update && sudo apt-get install -y docker-compose
