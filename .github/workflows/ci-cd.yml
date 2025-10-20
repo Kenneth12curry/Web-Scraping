@@ -11,9 +11,10 @@ permissions:
   security-events: write  # Obligatoire pour upload-sarif
 
 env:
-  POSTGRES_USER: test
-  POSTGRES_PASSWORD: test
-  POSTGRES_DB: test_db
+  MYSQL_DATABASE: test_db
+  MYSQL_USER: test_user
+  MYSQL_PASSWORD: test_password
+  MYSQL_ROOT_PASSWORD: root_password
 
 jobs:
   # ------------------- BACKEND TESTS -------------------
@@ -21,19 +22,20 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:13
+      mysql:
+        image: mysql:8.0
         env:
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+          MYSQL_USER: ${{ env.MYSQL_USER }}
+          MYSQL_PASSWORD: ${{ env.MYSQL_PASSWORD }}
+        ports:
+          - 3306:3306
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "mysqladmin ping -h localhost"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+          --health-retries 10
 
     steps:
       - uses: actions/checkout@v4
